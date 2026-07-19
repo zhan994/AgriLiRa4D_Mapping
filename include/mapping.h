@@ -9,6 +9,7 @@
  *
  */
 
+ 
 #ifndef MAPPING_H
 #define MAPPING_H
 
@@ -30,7 +31,8 @@ private:
 
   ros::Subscriber sub_lidar_;
   ros::Subscriber sub_radar_;
-  ros::Publisher pub_map_;
+  ros::Publisher pub_lidar_registered_;
+  ros::Publisher pub_radar_registered_;
 };
 } // namespace mapping
 

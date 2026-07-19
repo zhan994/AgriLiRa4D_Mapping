@@ -18,10 +18,13 @@ namespace mapping {
 struct Options {
   Options() {}
 
+  std::string pose_gt_file = "pose_gt.txt";
+
   std::string lidar_topic = "/rslidar_points";
   std::string imu_topic = "/imu/data";
   std::string radar_topic = "/radar_points";
-  std::string map_topic = "/map_points";
+  std::string lidar_registered_topic = "/lidar_registered";
+  std::string radar_registered_topic = "/radar_registered";
 };
 
 Options LoadOptionsFromFile(const std::string &config_file);
