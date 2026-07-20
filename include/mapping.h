@@ -13,8 +13,13 @@
 #ifndef MAPPING_H
 #define MAPPING_H
 
+#include <ros/ros.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/Imu.h>
+
 #include "comm.h"
 #include "options.h"
+#include "preprocess.h"
 
 namespace mapping {
 class Mapping {
@@ -22,8 +27,9 @@ public:
   Mapping(ros::NodeHandle &nh, const Options &options = Options());
   ~Mapping();
 
-  void LidarCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
-  void RadarCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
+  void LidarCBK(const sensor_msgs::PointCloud2ConstPtr &msg);
+  void RadarCBK(const sensor_msgs::PointCloud2ConstPtr &msg);
+  void ImuCBK(const sensor_msgs::ImuConstPtr &msg);
 
 private:
   ros::NodeHandle nh_;
@@ -31,6 +37,7 @@ private:
 
   ros::Subscriber sub_lidar_;
   ros::Subscriber sub_radar_;
+  ros::Subscriber sub_imu_;
   ros::Publisher pub_lidar_registered_;
   ros::Publisher pub_radar_registered_;
 };

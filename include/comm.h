@@ -27,20 +27,6 @@
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
 
-#include <ros/ros.h>
-#include <sensor_msgs/PointCloud2.h>
-
-using PointType = pcl::PointXYZINormal;
-using PointCloudType = pcl::PointCloud<PointType>;
-using CloudPtr = PointCloudType::Ptr;
-using PointVector = std::vector<PointType, Eigen::aligned_allocator<PointType>>;
-
-using RadarPointType = txg_radar::Point;
-using RadarPointCloudType = pcl::PointCloud<RadarPointType>;
-using RadarCloudPtr = RadarPointCloudType::Ptr;
-using RadarPointVector =
-    std::vector<RadarPointType, Eigen::aligned_allocator<RadarPointType>>;
-
 using V2D = Eigen::Vector2d;
 using V3D = Eigen::Vector3d;
 using V4D = Eigen::Vector4d;
@@ -119,18 +105,104 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(txg_radar::Point,
 )
 
 // clang-format on
+struct EIGEN_ALIGN16 PointStamped {
+  PCL_ADD_POINT4D;   // preferred way of adding a XYZ+padding
+  float intensity;   // Doppler velocity in m/s
+  double timestamp;  // timestamp
+
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+};
+// clang-format off
+POINT_CLOUD_REGISTER_POINT_STRUCT(PointStamped,
+    (float, x, x)
+    (float, y, y)
+    (float, z, z)
+    (float, intensity, intensity)
+    (double, timestamp, timestamp)
+)
+
+using PointType = pcl::PointXYZINormal;
+using PointCloudType = pcl::PointCloud<PointType>;
+using CloudPtr = PointCloudType::Ptr;
+using PointVector = std::vector<PointType, Eigen::aligned_allocator<PointType>>;
+
+using RadarPointType = txg_radar::Point;
+using RadarPointCloudType = pcl::PointCloud<RadarPointType>;
+using RadarCloudPtr = RadarPointCloudType::Ptr;
+using RadarPointVector =
+    std::vector<RadarPointType, Eigen::aligned_allocator<RadarPointType>>;
+
+using PointStampedCloudType = pcl::PointCloud<PointStamped>;
+using PointStampedCloudPtr = PointStampedCloudType::Ptr;
+using PointStampedVector = std::vector<PointStamped, Eigen::aligned_allocator<PointStamped>>;
+
+// clang-format on
 namespace mapping {
+/// @brief  6D pose struct
+struct Pose6D {
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-class Utils {
-public:
-  // Convert ROS PointCloud2 message to PCL PointCloud for RS_Airy LIDAR
-  static void RSAiry2PCL(const sensor_msgs::PointCloud2::ConstPtr &msg,
-                         CloudPtr &cloud, int filter_num, double blind);
+  double offset;
+  V3D acc;
+  V3D gyro;
+  V3D vel;
+  V3D trans;
+  M3D rot;
 
-  // Convert ROS PointCloud2 message to PCL PointCloud for TXG Radar
-  static void Radar2PCL(const sensor_msgs::PointCloud2::ConstPtr &msg,
-                        RadarCloudPtr &cloud);
+  Pose6D() = default;
+  Pose6D(double t, const V3D &a, const V3D &g, const V3D &v, const V3D &p,
+         const M3D &r)
+      : offset(t), acc(a), gyro(g), vel(v), trans(p), rot(r) {}
+};
+
+/// @brief  IMU data struct
+struct IMUData {
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+  V3D acc;
+  V3D gyro;
+  double timestamp;
+
+  IMUData() = default;
+  IMUData(const V3D &a, const V3D &g, double &d)
+      : acc(a), gyro(g), timestamp(d) {}
+};
+
+/// @brief  Measurement group struct
+struct MeasureGroup {
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+  MeasureGroup() {
+    lidar_cloud.reset(new PointCloudType);
+    lidar_points_stamped.clear();
+
+    radar_cloud.reset(new RadarPointCloudType);
+
+    imu_data.clear();
+  }
+
+  double lidar_beg_time = -1.0;
+  double lidar_end_time = -1.0;
+  double radar_time = -1.0;
+
+  CloudPtr lidar_cloud;
+  std::deque<PointStamped> lidar_points_stamped;
+
+  RadarCloudPtr radar_cloud;
+  std::deque<IMUData> imu_data;
 };
 } // namespace mapping
+
+/// @brief  Compute time increment in milliseconds
+inline double TimeInc(const std::chrono::high_resolution_clock::time_point& t_end,
+                      const std::chrono::high_resolution_clock::time_point& t_begin) {
+  return std::chrono::duration_cast<std::chrono::duration<double>>(t_end - t_begin).count() * 1000.0;
+}
+
+/// @brief  Compute squared distance between two points
+inline double SquareDist(const PointType& p1, const PointType& p2) {
+  return (p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y) + (p1.z - p2.z) * (p1.z - p2.z);
+}
+
 
 #endif // COMM_H

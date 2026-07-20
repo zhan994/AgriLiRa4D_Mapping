@@ -1,0 +1,8 @@
+pose_gt_file: "pose_gt.txt"
+
+lidar_topic: "/rslidar_points"
+imu_topic: "/imu/data"
+radar_topic: "/radar_points"
+
+lidar_registered_topic: "/lidar_registered"
+radar_registered_topic: "/radar_registered"

@@ -23,6 +23,7 @@ struct Options {
   std::string lidar_topic = "/rslidar_points";
   std::string imu_topic = "/imu/data";
   std::string radar_topic = "/radar_points";
+  
   std::string lidar_registered_topic = "/lidar_registered";
   std::string radar_registered_topic = "/radar_registered";
 };
