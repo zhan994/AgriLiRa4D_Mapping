@@ -1,8 +1,26 @@
-pose_gt_file: "pose_gt.txt"
+topics:
+  pose_gt_file: "pose_gt.txt"
 
-lidar_topic: "/rslidar_points"
-imu_topic: "/imu/data"
-radar_topic: "/radar_points"
+  lidar_topic: "/rslidar_points"
+  imu_topic: "/imu/data"
+  radar_topic: "/radar_points"
 
-lidar_registered_topic: "/lidar_registered"
-radar_registered_topic: "/radar_registered"
+  lidar_registered_topic: "/lidar_registered"
+  radar_registered_topic: "/radar_registered"
+
+extrinsics:
+   # Rz:-90 Ry:0 Rx:180 
+  R_il: [0, -1, 0, 
+         -1, 0, 0, 
+         0, 0, -1]
+  t_il: [0.00425, 0.00418, -0.00446]
+  
+  # Rz:0 Ry:-81 Rx:-90
+  R_lr: [ 0.1564345,  0.9876884, 0,
+          0,  0, 1,
+          0.9876884, -0.1564345, 0]
+  t_lr: [0.11216, 0, -0.03737]
+
+  
+
+          
