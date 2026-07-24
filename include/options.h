@@ -21,17 +21,22 @@ struct Options {
   std::string pose_gt_file = "pose_gt.txt";
 
   std::string lidar_topic = "/rslidar_points";
-  std::string imu_topic = "/imu/data";
   std::string radar_topic = "/radar_points";
 
   std::string lidar_registered_topic = "/lidar_registered";
   std::string radar_registered_topic = "/radar_registered";
 
-  std::vector<double> extrinsic_T = {0.00425, 0.00418, -0.00446};
-  std::vector<double> extrinsic_R = {0.0, -1.0, 0.0, -1.0, 0.0,
-                                     0.0, 0.0,  0.0, -1.0};
-  V3D t_flu_imu = V3D::Zero();
-  M3D R_flu_imu = M3D::Identity();
+  std::vector<double> t_bl_vec = {0.0, 0.0, 0.0};
+  std::vector<double> R_bl_vec = {0, 0, 1, 0, -1, 0, 1, 0, 0};
+
+  std::vector<double> t_lr_vec = {0.11216, 0, -0.03737};
+  std::vector<double> R_lr_vec = {0.1564345, 0.9876884, 0,          0, 0,
+                                  1,         0.9876884, -0.1564345, 0};
+
+  V3D t_bl = V3D::Zero();
+  M3D R_bl = M3D::Identity();
+  V3D t_lr = V3D::Zero();
+  M3D R_lr = M3D::Identity();
 };
 
 Options LoadOptionsFromFile(const std::string &config_file);

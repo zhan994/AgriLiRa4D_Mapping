@@ -38,9 +38,6 @@ struct DataCache {
   // buffers
   std::mutex mtx; // mutex for data buffer
 
-  // IMU
-  std::deque<mapping::IMUData> imu_buffer;
-
   // LiDAR
   std::deque<std::pair<double, CloudPtr>> lidar_buffer; // origin frame
   std::deque<PointStamped> lidar_points_stamped_buffer; // points with timestamp
@@ -62,7 +59,6 @@ public:
 private:
   void LidarCBK(const sensor_msgs::PointCloud2ConstPtr &msg);
   void RadarCBK(const sensor_msgs::PointCloud2ConstPtr &msg);
-  void ImuCBK(const sensor_msgs::ImuConstPtr &msg);
 
   void Run();
   void SyncGroup();
@@ -79,7 +75,6 @@ private:
 
   ros::Subscriber sub_lidar_;
   ros::Subscriber sub_radar_;
-  ros::Subscriber sub_imu_;
 
   ros::Publisher pub_lidar_sync_;
   ros::Publisher pub_radar_sync_;

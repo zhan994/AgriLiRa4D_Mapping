@@ -3,3 +3,32 @@
 ***Mapping package for "AgriLiRa4D: A Multi-Sensor UAV Dataset for Robust SLAM in Challenging Agricultural Fields".***
 
 ![](imgs/pipeline.jpg)
+
+## Run
+
+```bash
+# build
+mkdir -p ws_agrilira4d/src
+cd ws_agrilira4d/src
+git clone git@github.com:zhan994/AgriLiRa4D_Mapping.git
+cd ..
+catkin_make
+
+# run
+
+```
+
+
+## Notes
+
+**Ground-Truth Odometry for FRD (Body) in FLU**
+
+![](imgs/FLU_ENU.png)
+
+**Extrinsics for Robosense Airy LiDAR**
+
+![](imgs/Airy_Extrinsics.png)
+
+
+
+
