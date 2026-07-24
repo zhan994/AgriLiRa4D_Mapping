@@ -1,0 +1,10 @@
+<launch>
+  <arg name="rviz" default="true" />
+  <node name="mapping_node" pkg="mapping" type="mapping_node" output="screen" args="$(find mapping)/config/agrilira4d.yaml"  />
+
+  <group if="$(arg rviz)">
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find mapping)/launch/mapping.rviz" />
+  </group>
+
+launch-prefix="gdb --args"
+</launch>

@@ -13,9 +13,16 @@
 #include "mapping.h"
 
 int main(int argc, char **argv) {
+  if (argc < 2) {
+    std::cout << "usage: ./rlio_node <path-to-cfg>/cfg.yaml" << std::endl;
+    return -1;
+  }
+
   ros::init(argc, argv, "mapping_node");
   ros::NodeHandle nh;
-  mapping::Options options = mapping::LoadOptionsFromFile("config.yaml");
+
+  std::string cfg_fn = argv[1];
+  mapping::Options options = mapping::LoadOptionsFromFile(cfg_fn);
   mapping::Mapping mapping(nh, options);
 
   ros::spin();

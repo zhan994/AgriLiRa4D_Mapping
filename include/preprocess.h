@@ -25,6 +25,9 @@ public:
   // Convert ROS PointCloud2 message to PCL PointCloud for TXG Radar
   static void Radar2PCL(const sensor_msgs::PointCloud2::ConstPtr &msg,
                         RadarCloudPtr &cloud);
+
+  // Undistort LiDAR points based on synchronized pose data
+  static void Undistort(MeasureGroup &meas);
 };
 } // namespace mapping
 

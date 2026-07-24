@@ -1,7 +1,7 @@
-topics:
-  pose_gt_file: "pose_gt.txt"
-  lidar_topic: "/rslidar_points"
-  radar_topic: "/radar_points"
+pose_gt_file: "/mnt/sda/agrilira4d/dataset/gt_flu/flat/NJFlatB01.txt"
+lidar_topic: "/rslidar_points"
+radar_topic: "/radar_points"
+verbose: true
 
 extrinsics:
    # Rz:180 Ry:-90 Rx:0 
@@ -17,6 +17,8 @@ extrinsics:
   t_lr: [0.11216, 0, -0.03737]
 
 preprocess:
+  pose_num_threshold: 7
+
   lidar_filter_num: 1
   lidar_blind: 2
           

@@ -106,9 +106,9 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(txg_radar::Point,
 
 // clang-format on
 struct EIGEN_ALIGN16 PointStamped {
-  PCL_ADD_POINT4D;   // preferred way of adding a XYZ+padding
-  float intensity;   // Doppler velocity in m/s
-  double timestamp;  // timestamp
+  PCL_ADD_POINT4D;  // preferred way of adding a XYZ+padding
+  float intensity;  // Doppler velocity in m/s
+  double timestamp; // timestamp
 
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
@@ -175,10 +175,8 @@ struct MeasureGroup {
   MeasureGroup() {
     lidar_cloud.reset(new PointCloudType);
     lidar_points_stamped.clear();
-
     radar_cloud.reset(new RadarPointCloudType);
-
-    imu_data.clear();
+    pose_data.clear();
   }
 
   double lidar_beg_time = -1.0;
@@ -187,22 +185,25 @@ struct MeasureGroup {
 
   CloudPtr lidar_cloud;
   std::deque<PointStamped> lidar_points_stamped;
-
   RadarCloudPtr radar_cloud;
-  std::deque<IMUData> imu_data;
+  std::deque<Pose6D> pose_data;
 };
 } // namespace mapping
 
 /// @brief  Compute time increment in milliseconds
-inline double TimeInc(const std::chrono::high_resolution_clock::time_point& t_end,
-                      const std::chrono::high_resolution_clock::time_point& t_begin) {
-  return std::chrono::duration_cast<std::chrono::duration<double>>(t_end - t_begin).count() * 1000.0;
+inline double
+TimeInc(const std::chrono::high_resolution_clock::time_point &t_end,
+        const std::chrono::high_resolution_clock::time_point &t_begin) {
+  return std::chrono::duration_cast<std::chrono::duration<double>>(t_end -
+                                                                   t_begin)
+             .count() *
+         1000.0;
 }
 
 /// @brief  Compute squared distance between two points
-inline double SquareDist(const PointType& p1, const PointType& p2) {
-  return (p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y) + (p1.z - p2.z) * (p1.z - p2.z);
+inline double SquareDist(const PointType &p1, const PointType &p2) {
+  return (p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y) +
+         (p1.z - p2.z) * (p1.z - p2.z);
 }
-
 
 #endif // COMM_H
