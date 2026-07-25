@@ -15,7 +15,8 @@ cd ..
 catkin_make
 
 # run
-
+source devel/setup.bash
+roslaunch mapping mapping.launch
 ```
 
 

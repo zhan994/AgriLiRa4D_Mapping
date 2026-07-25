@@ -38,6 +38,8 @@ struct Options {
   M3D R_bl = M3D::Identity();
   V3D t_lr = V3D::Zero();
   M3D R_lr = M3D::Identity();
+  V3D t_br = V3D::Zero();
+  M3D R_br = M3D::Identity();
 
   int lidar_filter_num = 1;
   double lidar_blind = 2.0;

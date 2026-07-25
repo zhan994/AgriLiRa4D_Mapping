@@ -29,6 +29,9 @@ Options LoadOptionsFromFile(const std::string &config_file) {
       options.R_lr_vec[3], options.R_lr_vec[4], options.R_lr_vec[5],
       options.R_lr_vec[6], options.R_lr_vec[7], options.R_lr_vec[8];
 
+  options.R_br = options.R_bl * options.R_lr;
+  options.t_br = options.R_bl * options.t_lr + options.t_bl;
+
   options.lidar_filter_num = config["preprocess"]["lidar_filter_num"].as<int>();
   options.lidar_blind = config["preprocess"]["lidar_blind"].as<double>();
   options.pose_num_threshold =

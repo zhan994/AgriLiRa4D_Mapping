@@ -14,6 +14,8 @@
 
 #include "comm.h"
 
+#include <pcl/common/transforms.h>
+
 namespace mapping {
 
 class Preprocess {
@@ -27,7 +29,14 @@ public:
                         RadarCloudPtr &cloud);
 
   // Undistort LiDAR points based on synchronized pose data
-  static void Undistort(MeasureGroup &meas);
+  static void UndistortPcl(MeasureGroup &meas, const M3D &R_bl,
+                           const V3D &t_bl);
+
+  static void TransformPointCloud(const CloudPtr &cloud, const M3D &r,
+                                  const V3D &t, CloudPtr &output);
+
+  static void TransformRadarPointCloud(const RadarCloudPtr &cloud, const M3D &r,
+                                       const V3D &t, RadarCloudPtr &output);
 };
 } // namespace mapping
 

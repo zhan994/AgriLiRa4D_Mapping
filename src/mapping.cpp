@@ -3,8 +3,12 @@
 namespace mapping {
 
 Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
-    : nh_(nh), options_(options) {
+    : nh_(nh), options_(options), lidar_aft_mapped_(new PointCloudType),
+      radar_aft_mapped_(new RadarPointCloudType) {
   LoadPoseGT(options_.pose_gt_file);
+
+  data_.path.header.frame_id = "world";
+  data_.path.poses.clear();
 
   sub_lidar_ =
       nh_.subscribe(options_.lidar_topic, 10, &Mapping::LidarCBK, this);
@@ -17,9 +21,7 @@ Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
       nh_.advertise<sensor_msgs::PointCloud2>("radar_aft_mapped", 10);
 
   pub_path_ = nh_.advertise<nav_msgs::Path>("/path", 10);
-  pub_odom_sync_ = nh_.advertise<nav_msgs::Odometry>("/odom_sync", 10);
-  pub_lidar_sync_ = nh_.advertise<sensor_msgs::PointCloud2>("/lidar_sync", 10);
-  pub_radar_sync_ = nh_.advertise<sensor_msgs::PointCloud2>("/radar_sync", 10);
+  pub_odom_ = nh_.advertise<nav_msgs::Odometry>("/odom", 10);
 
   run_thread_ = std::make_shared<std::thread>(&Mapping::Run, this);
 }
@@ -165,6 +167,48 @@ void Mapping::Run() {
       }
 
       Process();
+
+      // Publish processed data
+      sensor_msgs::PointCloud2 lidar_aft_mapped_msg;
+      pcl::toROSMsg(*lidar_aft_mapped_, lidar_aft_mapped_msg);
+      lidar_aft_mapped_msg.header.stamp = ros::Time(sync_data_.radar_time);
+      lidar_aft_mapped_msg.header.frame_id = "world";
+      pub_lidar_aft_mapped_.publish(lidar_aft_mapped_msg);
+
+      sensor_msgs::PointCloud2 radar_aft_mapped_msg;
+      pcl::toROSMsg(*radar_aft_mapped_, radar_aft_mapped_msg);
+      radar_aft_mapped_msg.header.stamp = ros::Time(sync_data_.radar_time);
+      radar_aft_mapped_msg.header.frame_id = "world";
+      pub_radar_aft_mapped_.publish(radar_aft_mapped_msg);
+
+      // Publish path
+      geometry_msgs::PoseStamped pose_msg;
+      pose_msg.header.stamp = ros::Time(sync_data_.radar_time);
+      pose_msg.header.frame_id = "world";
+      pose_msg.pose.position.x = sync_data_.pose_data.back().trans.x();
+      pose_msg.pose.position.y = sync_data_.pose_data.back().trans.y();
+      pose_msg.pose.position.z = sync_data_.pose_data.back().trans.z();
+      QD q = QD(sync_data_.pose_data.back().rot);
+      pose_msg.pose.orientation.x = q.x();
+      pose_msg.pose.orientation.y = q.y();
+      pose_msg.pose.orientation.z = q.z();
+      pose_msg.pose.orientation.w = q.w();
+      data_.path.header.stamp = ros::Time(sync_data_.radar_time);
+      data_.path.poses.push_back(pose_msg);
+      pub_path_.publish(data_.path);
+
+      // Publish synchronized odometry
+      nav_msgs::Odometry odom_msg;
+      odom_msg.header.stamp = ros::Time(sync_data_.radar_time);
+      odom_msg.header.frame_id = "world";
+      odom_msg.pose.pose.position.x = sync_data_.pose_data.back().trans.x();
+      odom_msg.pose.pose.position.y = sync_data_.pose_data.back().trans.y();
+      odom_msg.pose.pose.position.z = sync_data_.pose_data.back().trans.z();
+      odom_msg.pose.pose.orientation.x = q.x();
+      odom_msg.pose.pose.orientation.y = q.y();
+      odom_msg.pose.pose.orientation.z = q.z();
+      odom_msg.pose.pose.orientation.w = q.w();
+      pub_odom_.publish(odom_msg);
     }
 
     rate.sleep();
@@ -267,6 +311,23 @@ void Mapping::Process() {
     return;
   }
 
-  Preprocess::Undistort(sync_data_);
+  Preprocess::UndistortPcl(sync_data_, options_.R_bl, options_.t_bl);
+
+  M3D R_wb = sync_data_.pose_data.back().rot;
+  V3D t_wb = sync_data_.pose_data.back().trans;
+
+  // Compute the world to LiDAR and world to Radar transformations
+  M3D R_wl = R_wb * options_.R_bl;
+  V3D t_wl = R_wb * options_.t_bl + t_wb;
+
+  // Compute the world to Radar transformation
+  M3D R_wr = R_wb * options_.R_br;
+  V3D t_wr = R_wb * options_.t_br + t_wb;
+
+  Preprocess::TransformPointCloud(sync_data_.lidar_cloud, R_wl, t_wl,
+                                  lidar_aft_mapped_);
+
+  Preprocess::TransformRadarPointCloud(sync_data_.radar_cloud, R_wr, t_wr,
+                                       radar_aft_mapped_);
 }
 } // namespace mapping

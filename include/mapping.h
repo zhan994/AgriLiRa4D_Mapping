@@ -73,14 +73,16 @@ private:
   // thread for mapping
   std::shared_ptr<std::thread> run_thread_;
 
+  // cloud_aft_mapped
+  CloudPtr lidar_aft_mapped_;
+  RadarCloudPtr radar_aft_mapped_;
+
   // subscribers
   ros::Subscriber sub_lidar_;
   ros::Subscriber sub_radar_;
 
   // publishers
-  ros::Publisher pub_lidar_sync_;
-  ros::Publisher pub_radar_sync_;
-  ros::Publisher pub_odom_sync_;
+  ros::Publisher pub_odom_;
   ros::Publisher pub_path_;
   ros::Publisher pub_lidar_aft_mapped_;
   ros::Publisher pub_radar_aft_mapped_;
