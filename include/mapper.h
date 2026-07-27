@@ -12,11 +12,42 @@
 #ifndef MAPPER_H
 #define MAPPER_H
 
+#include "comm.h"
+
 namespace mapping {
+
+/**
+ * @brief One synchronized observation expressed in the world frame.
+ *
+ * Mapping owns synchronization, motion compensation and extrinsic transforms.
+ * A mapper backend only consumes the resulting observation and maintains its
+ * own map representation.
+ */
+struct MapperInput {
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+  double timestamp = -1.0;
+  Pose6D body_pose;
+  V3D lidar_origin = V3D::Zero();
+  V3D radar_origin = V3D::Zero();
+  CloudPtr lidar_cloud;
+  RadarCloudPtr radar_cloud;
+};
+
 class Mapper {
 public:
-private:
+  virtual ~Mapper() = default;
+  virtual void Update(const MapperInput &input) = 0;
 };
+
+class OctoMapper : public Mapper {
+public:
+};
+
+class IOctoMapper : public Mapper {
+public:
+};
+
 } // namespace mapping
 
 #endif // MAPPER_H

@@ -26,6 +26,7 @@
 #include <sensor_msgs/PointCloud2.h>
 
 #include "comm.h"
+#include "mapper.h"
 #include "options.h"
 #include "preprocess.h"
 
@@ -72,6 +73,9 @@ private:
 
   // thread for mapping
   std::shared_ptr<std::thread> run_thread_;
+
+  // mapping backend
+  std::unique_ptr<Mapper> mapper_;
 
   // cloud_aft_mapped
   CloudPtr lidar_aft_mapped_;

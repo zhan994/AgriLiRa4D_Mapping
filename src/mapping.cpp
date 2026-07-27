@@ -335,5 +335,16 @@ void Mapping::Process() {
 
   Preprocess::TransformRadarPointCloud(sync_data_.radar_cloud, R_wr, t_wr,
                                        radar_aft_mapped_);
+
+  if (mapper_) {
+    MapperInput mapper_input;
+    mapper_input.timestamp = sync_data_.radar_time;
+    mapper_input.body_pose = sync_data_.pose_data.back();
+    mapper_input.lidar_origin = t_wl;
+    mapper_input.radar_origin = t_wr;
+    mapper_input.lidar_cloud = lidar_aft_mapped_;
+    mapper_input.radar_cloud = radar_aft_mapped_;
+    mapper_->Update(mapper_input);
+  }
 }
 } // namespace mapping
