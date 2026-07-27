@@ -30,7 +30,7 @@ Mapping::~Mapping() {
   ROS_INFO("Mapping thread is stopping...");
   if (run_thread_ && run_thread_->joinable()) {
     run_thread_->join();
-    run_thread_ == nullptr;
+    run_thread_ = nullptr;
   }
 }
 
@@ -227,6 +227,8 @@ bool Mapping::SyncGroup() {
 
   // step: 1 check empty
   if (data_.radar_buffer.empty() || data_.lidar_points_stamped_buffer.empty()) {
+    ROS_WARN_THROTTLE(1.0,
+                      "Radar or LiDAR buffer is empty. Waiting for more data.");
     data_.mtx.unlock();
     return false;
   }
@@ -234,7 +236,8 @@ bool Mapping::SyncGroup() {
   // step: 2 check lidar and imu over radar time
   if (data_.lidar_points_stamped_buffer.back().timestamp <=
       data_.radar_buffer.front().first) {
-    ROS_WARN("LiDAR points are all before the first radar timestamp.");
+    ROS_WARN_THROTTLE(1.0,
+                      "LiDAR points are all before the first radar timestamp.");
     data_.mtx.unlock();
     return false;
   }
@@ -301,16 +304,19 @@ bool Mapping::SyncGroup() {
   data_.radar_buffer.pop_front();
 
   data_.mtx.unlock();
-  return true; // Successfully synchronized
+
+  if (sync_data_.pose_data.size() < options_.pose_num_threshold) {
+    ROS_WARN(
+        "Not enough pose data at radar time %.6f. Required: %d, available: %zu",
+        sync_data_.radar_time, options_.pose_num_threshold,
+        sync_data_.pose_data.size());
+    return false;
+  }
+
+  return true;
 }
 
 void Mapping::Process() {
-  if (sync_data_.pose_data.size() < options_.pose_num_threshold) {
-    ROS_WARN(
-        "Not enough pose data to undistort LiDAR points. Skipping this group.");
-    return;
-  }
-
   Preprocess::UndistortPcl(sync_data_, options_.R_bl, options_.t_bl);
 
   M3D R_wb = sync_data_.pose_data.back().rot;
