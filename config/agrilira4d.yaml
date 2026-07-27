@@ -1,4 +1,4 @@
-pose_gt_file: "/home/zhan/agrilira4d/dataset/gt_flu/flat/NJFlatB01.txt"
+pose_gt_file: "/mnt/sda/agrilira4d/dataset/gt_flu/flat/NJFlatB01.txt"
 lidar_topic: "/rslidar_points"
 radar_topic: "/radar_points"
 verbose: true
