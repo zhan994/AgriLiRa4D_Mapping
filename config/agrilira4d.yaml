@@ -22,3 +22,14 @@ preprocess:
   lidar_filter_num: 1
   lidar_blind: 2
           
+mapper:
+  type: 0 # 0: OctoMapper
+  octomap:
+    resolution: 0.5
+    max_range: 50.0
+    hit_prob: 0.7
+    miss_prob: 0.4
+    clamping_min: 0.12
+    clamping_max: 0.97
+    occupancy_threshold: 0.5
+  

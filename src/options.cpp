@@ -37,6 +37,20 @@ Options LoadOptionsFromFile(const std::string &config_file) {
   options.pose_num_threshold =
       config["preprocess"]["pose_num_threshold"].as<int>();
 
+  options.mapper_type = config["mapper"]["type"].as<int>();
+  if (options.mapper_type == 0) {
+    options.octomap_options.resolution =
+        config["mapper"]["octomap"]["resolution"].as<double>();
+    options.octomap_options.max_range =
+        config["mapper"]["octomap"]["max_range"].as<double>();
+    options.octomap_options.hit_probability =
+        config["mapper"]["octomap"]["hit_probability"].as<double>();
+    options.octomap_options.miss_probability =
+        config["mapper"]["octomap"]["miss_probability"].as<double>();
+    options.octomap_options.occupancy_threshold =
+        config["mapper"]["octomap"]["occupancy_threshold"].as<double>();
+  }
+
   return options;
 }
 } // namespace mapping

@@ -23,6 +23,13 @@ Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
   pub_path_ = nh_.advertise<nav_msgs::Path>("/path", 10);
   pub_odom_ = nh_.advertise<nav_msgs::Odometry>("/odom", 10);
 
+  if (options_.mapper_type == 0) {
+    mapper_ = std::make_unique<OctoMapper>(options_.octomap_options);
+  } else {
+    ROS_ERROR("Unsupported mapper type: %d", options_.mapper_type);
+    throw std::runtime_error("Unsupported mapper type");
+  }
+
   run_thread_ = std::make_shared<std::thread>(&Mapping::Run, this);
 }
 

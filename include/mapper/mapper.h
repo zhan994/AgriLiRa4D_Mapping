@@ -14,6 +14,8 @@
 
 #include "comm.h"
 
+#include <yaml-cpp/yaml.h>
+
 namespace mapping {
 
 /**
@@ -38,14 +40,8 @@ class Mapper {
 public:
   virtual ~Mapper() = default;
   virtual void Update(const MapperInput &input) = 0;
-};
-
-class OctoMapper : public Mapper {
-public:
-};
-
-class IOctoMapper : public Mapper {
-public:
+  virtual void Reset() = 0;
+  virtual bool Save(const std::string &path) const = 0;
 };
 
 } // namespace mapping

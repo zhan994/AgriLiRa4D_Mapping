@@ -26,7 +26,8 @@
 #include <sensor_msgs/PointCloud2.h>
 
 #include "comm.h"
-#include "mapper.h"
+#include "mapper/mapper.h"
+#include "mapper/mapper_octomap.h"
 #include "options.h"
 #include "preprocess.h"
 

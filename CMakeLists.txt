@@ -33,23 +33,31 @@ find_package(PCL REQUIRED)
 # Find YAML
 find_package(yaml-cpp REQUIRED)
 
+# Find Octomap
+find_package(octomap REQUIRED)
+
 catkin_package(CATKIN_DEPENDS ${PACKAGE_DEPENDENCIES})
 
 
 ###########
 ## Build ##
 ###########
-aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR}/src  LIDAR_MAPPING_SRC)
-add_executable(mapping_node ${LIDAR_MAPPING_SRC})
+aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR}/src MAPPING_SRC)
+aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR}/src/mapper MAPPER_SRC)
+
+
+add_executable(mapping_node ${MAPPING_SRC} ${MAPPER_SRC})
 target_include_directories(mapping_node PUBLIC 
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${catkin_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
+  ${OCTOMAP_INCLUDE_DIRS}
   ${YAML_CPP_INCLUDE_DIR}
 )
 target_link_libraries(mapping_node 
   ${catkin_LIBRARIES}
   ${PCL_LIBRARIES}
+  ${OCTOMAP_LIBRARIES}
   ${YAML_CPP_LIBRARIES}
 )
