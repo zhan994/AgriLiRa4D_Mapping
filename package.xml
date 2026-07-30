@@ -8,6 +8,7 @@
 
   <buildtool_depend>catkin</buildtool_depend>
   <depend>geometry_msgs</depend>
+  <depend>jsk_rviz_plugins</depend>
   <depend>nav_msgs</depend>
   <depend>octomap_msgs</depend>
   <depend>roscpp</depend>

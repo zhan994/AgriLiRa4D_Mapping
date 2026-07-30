@@ -185,6 +185,27 @@ Visualization Manager:
       Voxel Alpha: 1
       Voxel Coloring: Z-Axis
       Voxel Rendering: Occupied Voxels
+    - Align Bottom: false
+      Background Alpha: 0.6499999761581421
+      Background Color: 0; 0; 0
+      Class: jsk_rviz_plugin/OverlayText
+      Enabled: true
+      Foreground Alpha: 1
+      Foreground Color: 77; 255; 77
+      Invert Shadow: false
+      Name: Mapper Update Stats
+      Overtake BG Color Properties: false
+      Overtake FG Color Properties: false
+      Overtake Position Properties: false
+      Topic: /mapper_update_stats
+      Value: true
+      font: DejaVu Sans Mono
+      height: 175
+      left: 10
+      line width: 1
+      text size: 14
+      top: 10
+      width: 430
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

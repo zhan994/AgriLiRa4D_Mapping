@@ -11,6 +11,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s")
 ## is used, also find other catkin packages
 set(PACKAGE_DEPENDENCIES
   geometry_msgs
+  jsk_rviz_plugins
   nav_msgs
   octomap_msgs
   roscpp

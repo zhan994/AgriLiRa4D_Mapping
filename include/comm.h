@@ -13,11 +13,15 @@
 #define COMM_H
 
 #include <chrono>
+#include <ctime>
 #include <deque>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <numeric>
+#include <sstream>
+#include <unistd.h>
 #include <unordered_map>
 #include <vector>
 
@@ -204,6 +208,27 @@ TimeInc(const std::chrono::high_resolution_clock::time_point &t_end,
 inline double SquareDist(const PointType &p1, const PointType &p2) {
   return (p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y) +
          (p1.z - p2.z) * (p1.z - p2.z);
+}
+
+inline double GetThreadCpuTimeMs() {
+  timespec cpu_time{};
+  if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu_time) != 0)
+    return 0.0;
+  return static_cast<double>(cpu_time.tv_sec) * 1000.0 +
+         static_cast<double>(cpu_time.tv_nsec) / 1.0e6;
+}
+
+inline std::int64_t GetProcessRssBytes() {
+  std::ifstream statm("/proc/self/statm");
+  std::int64_t total_pages = 0;
+  std::int64_t resident_pages = 0;
+  if (!(statm >> total_pages >> resident_pages))
+    return -1;
+
+  const long page_size = sysconf(_SC_PAGESIZE);
+  if (page_size <= 0)
+    return -1;
+  return resident_pages * static_cast<std::int64_t>(page_size);
 }
 
 #endif // COMM_H

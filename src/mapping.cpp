@@ -1,5 +1,6 @@
 #include "mapping.h"
 
+#include <jsk_rviz_plugins/OverlayText.h>
 #include <octomap_msgs/conversions.h>
 
 namespace mapping {
@@ -23,6 +24,8 @@ Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
       nh_.advertise<sensor_msgs::PointCloud2>("radar_aft_mapped", 10);
   pub_octomap_ =
       nh_.advertise<octomap_msgs::Octomap>("octomap_binary", 1, true);
+  pub_update_stats_ =
+      nh_.advertise<jsk_rviz_plugins::OverlayText>("mapper_update_stats", 1);
 
   pub_path_ = nh_.advertise<nav_msgs::Path>("/path", 10);
   pub_odom_ = nh_.advertise<nav_msgs::Odometry>("/odom", 10);
@@ -355,9 +358,83 @@ void Mapping::Process() {
     mapper_input.radar_origin = t_wr;
     mapper_input.lidar_cloud = lidar_aft_mapped_;
     mapper_input.radar_cloud = radar_aft_mapped_;
+
+    MapperUpdateStats stats;
+    stats.lidar_points =
+        mapper_input.lidar_cloud ? mapper_input.lidar_cloud->size() : 0;
+    stats.radar_points =
+        mapper_input.radar_cloud ? mapper_input.radar_cloud->size() : 0;
+
+    const std::int64_t rss_before = GetProcessRssBytes();
+    const auto wall_before = std::chrono::steady_clock::now();
+    const double cpu_before_ms = GetThreadCpuTimeMs();
+
     mapper_->Update(mapper_input);
+
+    const double cpu_after_ms = GetThreadCpuTimeMs();
+    const auto wall_after = std::chrono::steady_clock::now();
+    const std::int64_t rss_after = GetProcessRssBytes();
+
+    stats.wall_time_ms =
+        std::chrono::duration<double, std::milli>(wall_after - wall_before)
+            .count();
+    stats.cpu_time_ms = cpu_after_ms - cpu_before_ms;
+    if (stats.wall_time_ms > 0.0) {
+      stats.cpu_utilization_percent =
+          100.0 * stats.cpu_time_ms / stats.wall_time_ms;
+    }
+
+    stats.rss_bytes = rss_after;
+    if (rss_before >= 0 && rss_after >= 0)
+      stats.rss_delta_bytes = rss_after - rss_before;
+
+    PublishUpdateStats(stats);
+
     PublishOctomap(ros::Time(mapper_input.timestamp));
   }
+}
+
+void Mapping::PublishUpdateStats(const MapperUpdateStats &stats) {
+  constexpr double kBytesPerMiB = 1024.0 * 1024.0;
+
+  std::ostringstream text;
+  text << std::fixed << std::setprecision(3) << "Mapper Update\n"
+       << "Wall time : " << stats.wall_time_ms << " ms\n"
+       << "CPU time  : " << stats.cpu_time_ms << " ms\n"
+       << std::setprecision(1)
+       << "CPU usage : " << stats.cpu_utilization_percent << " %\n";
+  if (stats.rss_bytes >= 0) {
+    text << "RSS       : "
+         << static_cast<double>(stats.rss_bytes) / kBytesPerMiB << " MiB ("
+         << std::showpos
+         << static_cast<double>(stats.rss_delta_bytes) / kBytesPerMiB
+         << std::noshowpos << " MiB)\n";
+  } else {
+    text << "RSS       : unavailable\n";
+  }
+  text << "Points    : LiDAR " << stats.lidar_points << " | Radar "
+       << stats.radar_points << " | Total "
+       << stats.lidar_points + stats.radar_points;
+
+  jsk_rviz_plugins::OverlayText message;
+  message.action = jsk_rviz_plugins::OverlayText::ADD;
+  message.width = 430;
+  message.height = 175;
+  message.left = 10;
+  message.top = 10;
+  message.line_width = 1;
+  message.text_size = 14.0;
+  message.font = "DejaVu Sans Mono";
+  message.bg_color.r = 0.0;
+  message.bg_color.g = 0.0;
+  message.bg_color.b = 0.0;
+  message.bg_color.a = 0.65;
+  message.fg_color.r = 0.3;
+  message.fg_color.g = 1.0;
+  message.fg_color.b = 0.3;
+  message.fg_color.a = 1.0;
+  message.text = text.str();
+  pub_update_stats_.publish(message);
 }
 
 void Mapping::PublishOctomap(const ros::Time &stamp) {

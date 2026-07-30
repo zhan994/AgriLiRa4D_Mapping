@@ -12,6 +12,7 @@
 #ifndef MAPPING_H
 #define MAPPING_H
 
+#include <cstdint>
 #include <deque>
 #include <fstream>
 #include <iostream>
@@ -32,6 +33,16 @@
 #include "preprocess.h"
 
 namespace mapping {
+
+struct MapperUpdateStats {
+  double wall_time_ms = 0.0;
+  double cpu_time_ms = 0.0;
+  double cpu_utilization_percent = 0.0;
+  std::int64_t rss_bytes = -1;
+  std::int64_t rss_delta_bytes = 0;
+  std::size_t lidar_points = 0;
+  std::size_t radar_points = 0;
+};
 
 struct DataCache {
   double last_lidar_time = -1.0;
@@ -65,6 +76,7 @@ private:
   bool SyncGroup();
   void Process();
   void PublishOctomap(const ros::Time &stamp);
+  void PublishUpdateStats(const MapperUpdateStats &stats);
 
   ros::NodeHandle nh_;
   Options options_;
@@ -95,6 +107,7 @@ private:
   ros::Publisher pub_lidar_aft_mapped_;
   ros::Publisher pub_radar_aft_mapped_;
   ros::Publisher pub_octomap_;
+  ros::Publisher pub_update_stats_;
 };
 } // namespace mapping
 
