@@ -37,6 +37,9 @@ Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
     throw std::runtime_error("Unsupported mapper type");
   }
 
+  last_process_cpu_time_ms_ = GetProcessCpuTimeMs();
+  last_process_wall_time_ms_ = GetSteadyTimeMs();
+
   run_thread_ = std::make_shared<std::thread>(&Mapping::Run, this);
 }
 
@@ -365,7 +368,6 @@ void Mapping::Process() {
     stats.radar_points =
         mapper_input.radar_cloud ? mapper_input.radar_cloud->size() : 0;
 
-    const std::int64_t rss_before = GetProcessRssBytes();
     const auto wall_before = std::chrono::steady_clock::now();
     const double cpu_before_ms = GetThreadCpuTimeMs();
 
@@ -378,15 +380,25 @@ void Mapping::Process() {
     stats.wall_time_ms =
         std::chrono::duration<double, std::milli>(wall_after - wall_before)
             .count();
-    stats.cpu_time_ms = cpu_after_ms - cpu_before_ms;
+    stats.thread_cpu_time_ms = cpu_after_ms - cpu_before_ms;
     if (stats.wall_time_ms > 0.0) {
-      stats.cpu_utilization_percent =
-          100.0 * stats.cpu_time_ms / stats.wall_time_ms;
+      stats.thread_cpu_utilization_percent =
+          100.0 * stats.thread_cpu_time_ms / stats.wall_time_ms;
     }
 
+    const double process_cpu_time_ms = GetProcessCpuTimeMs();
+    const double process_wall_time_ms = GetSteadyTimeMs();
+    const double process_wall_delta_ms =
+        process_wall_time_ms - last_process_wall_time_ms_;
+    if (process_wall_delta_ms > 0.0) {
+      stats.process_cpu_utilization_percent =
+          100.0 * (process_cpu_time_ms - last_process_cpu_time_ms_) /
+          process_wall_delta_ms;
+    }
+    last_process_cpu_time_ms_ = process_cpu_time_ms;
+    last_process_wall_time_ms_ = process_wall_time_ms;
+
     stats.rss_bytes = rss_after;
-    if (rss_before >= 0 && rss_after >= 0)
-      stats.rss_delta_bytes = rss_after - rss_before;
 
     PublishUpdateStats(stats);
 
@@ -399,16 +411,15 @@ void Mapping::PublishUpdateStats(const MapperUpdateStats &stats) {
 
   std::ostringstream text;
   text << std::fixed << std::setprecision(3) << "Mapper Update\n"
-       << "Wall time : " << stats.wall_time_ms << " ms\n"
-       << "CPU time  : " << stats.cpu_time_ms << " ms\n"
-       << std::setprecision(1)
-       << "CPU usage : " << stats.cpu_utilization_percent << " %\n";
+       << "Update wall       : " << stats.wall_time_ms << " ms\n"
+       << "Update thread CPU : " << stats.thread_cpu_time_ms << " ms\n"
+       << std::setprecision(1) << "Update thread use : "
+       << stats.thread_cpu_utilization_percent << " %\n"
+       << "Process CPU avg   : " << stats.process_cpu_utilization_percent
+       << " %\n";
   if (stats.rss_bytes >= 0) {
     text << "RSS       : "
-         << static_cast<double>(stats.rss_bytes) / kBytesPerMiB << " MiB ("
-         << std::showpos
-         << static_cast<double>(stats.rss_delta_bytes) / kBytesPerMiB
-         << std::noshowpos << " MiB)\n";
+         << static_cast<double>(stats.rss_bytes) / kBytesPerMiB << " MiB\n";
   } else {
     text << "RSS       : unavailable\n";
   }
@@ -418,8 +429,8 @@ void Mapping::PublishUpdateStats(const MapperUpdateStats &stats) {
 
   jsk_rviz_plugins::OverlayText message;
   message.action = jsk_rviz_plugins::OverlayText::ADD;
-  message.width = 430;
-  message.height = 175;
+  message.width = 600;
+  message.height = 195;
   message.left = 10;
   message.top = 10;
   message.line_width = 1;

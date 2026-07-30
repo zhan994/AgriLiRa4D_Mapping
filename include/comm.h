@@ -13,6 +13,7 @@
 #define COMM_H
 
 #include <chrono>
+#include <cstdint>
 #include <ctime>
 #include <deque>
 #include <fstream>
@@ -216,6 +217,20 @@ inline double GetThreadCpuTimeMs() {
     return 0.0;
   return static_cast<double>(cpu_time.tv_sec) * 1000.0 +
          static_cast<double>(cpu_time.tv_nsec) / 1.0e6;
+}
+
+inline double GetProcessCpuTimeMs() {
+  timespec cpu_time{};
+  if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &cpu_time) != 0)
+    return 0.0;
+  return static_cast<double>(cpu_time.tv_sec) * 1000.0 +
+         static_cast<double>(cpu_time.tv_nsec) / 1.0e6;
+}
+
+inline double GetSteadyTimeMs() {
+  return std::chrono::duration<double, std::milli>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
 }
 
 inline std::int64_t GetProcessRssBytes() {

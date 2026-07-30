@@ -36,10 +36,10 @@ namespace mapping {
 
 struct MapperUpdateStats {
   double wall_time_ms = 0.0;
-  double cpu_time_ms = 0.0;
-  double cpu_utilization_percent = 0.0;
+  double thread_cpu_time_ms = 0.0;
+  double thread_cpu_utilization_percent = 0.0;
+  double process_cpu_utilization_percent = 0.0;
   std::int64_t rss_bytes = -1;
-  std::int64_t rss_delta_bytes = 0;
   std::size_t lidar_points = 0;
   std::size_t radar_points = 0;
 };
@@ -92,6 +92,8 @@ private:
   std::unique_ptr<Mapper> mapper_;
   ros::Time last_map_publish_stamp_;
   bool has_published_octomap_ = false;
+  double last_process_cpu_time_ms_ = 0.0;
+  double last_process_wall_time_ms_ = 0.0;
 
   // cloud_aft_mapped
   CloudPtr lidar_aft_mapped_;

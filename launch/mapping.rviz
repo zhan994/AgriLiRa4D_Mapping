@@ -200,12 +200,12 @@ Visualization Manager:
       Topic: /mapper_update_stats
       Value: true
       font: DejaVu Sans Mono
-      height: 175
+      height: 195
       left: 10
       line width: 1
       text size: 14
       top: 10
-      width: 430
+      width: 600
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
