@@ -18,6 +18,9 @@
 
 namespace mapping {
 
+/// @brief  Check if a point is valid (finite and within a reasonable range)
+bool IsValidPoint(const double &x, const double &y, const double &z);
+
 /**
  * @brief One synchronized observation expressed in the world frame.
  *

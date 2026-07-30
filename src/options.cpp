@@ -43,10 +43,10 @@ Options LoadOptionsFromFile(const std::string &config_file) {
         config["mapper"]["octomap"]["resolution"].as<double>();
     options.octomap_options.max_range =
         config["mapper"]["octomap"]["max_range"].as<double>();
-    options.octomap_options.hit_probability =
-        config["mapper"]["octomap"]["hit_probability"].as<double>();
-    options.octomap_options.miss_probability =
-        config["mapper"]["octomap"]["miss_probability"].as<double>();
+    options.octomap_options.hit_prob =
+        config["mapper"]["octomap"]["hit_prob"].as<double>();
+    options.octomap_options.miss_prob =
+        config["mapper"]["octomap"]["miss_prob"].as<double>();
     options.octomap_options.occupancy_threshold =
         config["mapper"]["octomap"]["occupancy_threshold"].as<double>();
   }

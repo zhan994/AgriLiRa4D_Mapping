@@ -15,7 +15,7 @@
 #include <octomap/octomap.h>
 
 #include "comm.h"
-#include "mapper.h"
+#include "mapper/mapper.h"
 
 namespace mapping {
 
@@ -27,10 +27,8 @@ public:
     Options() {}
     double resolution = 0.5; // default resolution in meters
     double max_range = 50.0;
-    double hit_probability = 0.7;
-    double miss_probability = 0.4;
-    double clamping_min = 0.12;
-    double clamping_max = 0.97;
+    double hit_prob = 0.7;
+    double miss_prob = 0.4;
     double occupancy_threshold = 0.5;
   };
 
@@ -43,6 +41,7 @@ public:
 private:
   Options options_;
   std::shared_ptr<octomap::OcTree> octree_;
+  octomap::KeyRay key_ray_; // temp storage for ray casting
 };
 
 } // namespace mapping
