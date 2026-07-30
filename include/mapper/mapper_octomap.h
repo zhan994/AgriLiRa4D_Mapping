@@ -38,6 +38,8 @@ public:
   void Reset() override;
   bool Save(const std::string &path) const override;
 
+  const octomap::OcTree *GetOctree() const override { return octree_.get(); }
+
 private:
   Options options_;
   std::shared_ptr<octomap::OcTree> octree_;

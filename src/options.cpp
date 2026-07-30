@@ -38,6 +38,10 @@ Options LoadOptionsFromFile(const std::string &config_file) {
       config["preprocess"]["pose_num_threshold"].as<int>();
 
   options.mapper_type = config["mapper"]["type"].as<int>();
+  if (config["mapper"]["publish_period"]) {
+    options.map_publish_period =
+        config["mapper"]["publish_period"].as<double>();
+  }
   if (options.mapper_type == 0) {
     options.octomap_options.resolution =
         config["mapper"]["octomap"]["resolution"].as<double>();

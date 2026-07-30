@@ -64,6 +64,7 @@ private:
   void Run();
   bool SyncGroup();
   void Process();
+  void PublishOctomap(const ros::Time &stamp);
 
   ros::NodeHandle nh_;
   Options options_;
@@ -77,6 +78,8 @@ private:
 
   // mapping backend
   std::unique_ptr<Mapper> mapper_;
+  ros::Time last_map_publish_stamp_;
+  bool has_published_octomap_ = false;
 
   // cloud_aft_mapped
   CloudPtr lidar_aft_mapped_;
@@ -91,6 +94,7 @@ private:
   ros::Publisher pub_path_;
   ros::Publisher pub_lidar_aft_mapped_;
   ros::Publisher pub_radar_aft_mapped_;
+  ros::Publisher pub_octomap_;
 };
 } // namespace mapping
 

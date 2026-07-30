@@ -24,10 +24,10 @@ preprocess:
           
 mapper:
   type: 0 # 0: OctoMapper
+  publish_period: 1.0 # seconds; <= 0 publishes every map update
   octomap:
     resolution: 0.5
     max_range: 50.0
     hit_prob: 0.7
     miss_prob: 0.4
     occupancy_threshold: 0.5
-  

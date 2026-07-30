@@ -1,5 +1,7 @@
 #include "mapping.h"
 
+#include <octomap_msgs/conversions.h>
+
 namespace mapping {
 
 Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
@@ -19,6 +21,8 @@ Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
       nh_.advertise<sensor_msgs::PointCloud2>("lidar_aft_mapped", 10);
   pub_radar_aft_mapped_ =
       nh_.advertise<sensor_msgs::PointCloud2>("radar_aft_mapped", 10);
+  pub_octomap_ =
+      nh_.advertise<octomap_msgs::Octomap>("octomap_binary", 1, true);
 
   pub_path_ = nh_.advertise<nav_msgs::Path>("/path", 10);
   pub_odom_ = nh_.advertise<nav_msgs::Odometry>("/odom", 10);
@@ -352,6 +356,30 @@ void Mapping::Process() {
     mapper_input.lidar_cloud = lidar_aft_mapped_;
     mapper_input.radar_cloud = radar_aft_mapped_;
     mapper_->Update(mapper_input);
+    PublishOctomap(ros::Time(mapper_input.timestamp));
   }
+}
+
+void Mapping::PublishOctomap(const ros::Time &stamp) {
+  if (!mapper_ || !mapper_->GetOctree())
+    return;
+
+  if (options_.map_publish_period > 0.0 && has_published_octomap_ &&
+      stamp >= last_map_publish_stamp_ &&
+      (stamp - last_map_publish_stamp_).toSec() < options_.map_publish_period) {
+    return;
+  }
+
+  octomap_msgs::Octomap message;
+  if (!octomap_msgs::binaryMapToMsg(*mapper_->GetOctree(), message)) {
+    ROS_WARN_THROTTLE(1.0, "Failed to serialize OctoMap for visualization.");
+    return;
+  }
+
+  message.header.stamp = stamp;
+  message.header.frame_id = "world";
+  pub_octomap_.publish(message);
+  last_map_publish_stamp_ = stamp;
+  has_published_octomap_ = true;
 }
 } // namespace mapping

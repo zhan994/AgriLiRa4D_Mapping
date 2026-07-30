@@ -14,6 +14,7 @@
 
 #include "comm.h"
 
+#include <octomap/OcTree.h>
 #include <yaml-cpp/yaml.h>
 
 namespace mapping {
@@ -45,6 +46,7 @@ public:
   virtual void Update(const MapperInput &input) = 0;
   virtual void Reset() = 0;
   virtual bool Save(const std::string &path) const = 0;
+  virtual const octomap::OcTree *GetOctree() const = 0;
 };
 
 } // namespace mapping

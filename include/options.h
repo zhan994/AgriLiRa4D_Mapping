@@ -48,6 +48,7 @@ struct Options {
   int pose_num_threshold = 8;
 
   int mapper_type = 0; // 0: OctoMapper
+  double map_publish_period = 1.0; // seconds; <= 0 publishes every update
 
   OctoMapper::Options octomap_options = OctoMapper::Options();
 };
