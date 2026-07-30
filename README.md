@@ -4,6 +4,17 @@
 
 ![](imgs/pipeline.jpg)
 
+**Supported Platforms**
+
+- ROS-Noetic on Ubuntu20.04
+<!-- - ROS-One on Ubuntu22.04 -->
+
+## Third-party
+
+- PCL
+- Eigen3
+- Octomap
+
 ## Run
 
 ```bash

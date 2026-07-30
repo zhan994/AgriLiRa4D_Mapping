@@ -12,6 +12,7 @@
 #ifndef MAPPING_H
 #define MAPPING_H
 
+#include <cstdint>
 #include <deque>
 #include <fstream>
 #include <iostream>
@@ -26,10 +27,22 @@
 #include <sensor_msgs/PointCloud2.h>
 
 #include "comm.h"
+#include "mapper/mapper.h"
+#include "mapper/mapper_octomap.h"
 #include "options.h"
 #include "preprocess.h"
 
 namespace mapping {
+
+struct MapperUpdateStats {
+  double wall_time_ms = 0.0;
+  double thread_cpu_time_ms = 0.0;
+  double thread_cpu_utilization_percent = 0.0;
+  double process_cpu_utilization_percent = 0.0;
+  std::int64_t rss_bytes = -1;
+  std::size_t lidar_points = 0;
+  std::size_t radar_points = 0;
+};
 
 struct DataCache {
   double last_lidar_time = -1.0;
@@ -62,6 +75,8 @@ private:
   void Run();
   bool SyncGroup();
   void Process();
+  void PublishOctomap(const ros::Time &stamp);
+  void PublishUpdateStats(const MapperUpdateStats &stats);
 
   ros::NodeHandle nh_;
   Options options_;
@@ -72,6 +87,13 @@ private:
 
   // thread for mapping
   std::shared_ptr<std::thread> run_thread_;
+
+  // mapping backend
+  std::unique_ptr<Mapper> mapper_;
+  ros::Time last_map_publish_stamp_;
+  bool has_published_octomap_ = false;
+  double last_process_cpu_time_ms_ = 0.0;
+  double last_process_wall_time_ms_ = 0.0;
 
   // cloud_aft_mapped
   CloudPtr lidar_aft_mapped_;
@@ -86,6 +108,8 @@ private:
   ros::Publisher pub_path_;
   ros::Publisher pub_lidar_aft_mapped_;
   ros::Publisher pub_radar_aft_mapped_;
+  ros::Publisher pub_octomap_;
+  ros::Publisher pub_update_stats_;
 };
 } // namespace mapping
 

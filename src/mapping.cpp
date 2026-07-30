@@ -1,5 +1,8 @@
 #include "mapping.h"
 
+#include <jsk_rviz_plugins/OverlayText.h>
+#include <octomap_msgs/conversions.h>
+
 namespace mapping {
 
 Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
@@ -19,9 +22,23 @@ Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
       nh_.advertise<sensor_msgs::PointCloud2>("lidar_aft_mapped", 10);
   pub_radar_aft_mapped_ =
       nh_.advertise<sensor_msgs::PointCloud2>("radar_aft_mapped", 10);
+  pub_octomap_ =
+      nh_.advertise<octomap_msgs::Octomap>("octomap_binary", 1, true);
+  pub_update_stats_ =
+      nh_.advertise<jsk_rviz_plugins::OverlayText>("mapper_update_stats", 1);
 
   pub_path_ = nh_.advertise<nav_msgs::Path>("/path", 10);
   pub_odom_ = nh_.advertise<nav_msgs::Odometry>("/odom", 10);
+
+  if (options_.mapper_type == 0) {
+    mapper_ = std::make_unique<OctoMapper>(options_.octomap_options);
+  } else {
+    ROS_ERROR("Unsupported mapper type: %d", options_.mapper_type);
+    throw std::runtime_error("Unsupported mapper type");
+  }
+
+  last_process_cpu_time_ms_ = GetProcessCpuTimeMs();
+  last_process_wall_time_ms_ = GetSteadyTimeMs();
 
   run_thread_ = std::make_shared<std::thread>(&Mapping::Run, this);
 }
@@ -335,5 +352,122 @@ void Mapping::Process() {
 
   Preprocess::TransformRadarPointCloud(sync_data_.radar_cloud, R_wr, t_wr,
                                        radar_aft_mapped_);
+
+  if (mapper_) {
+    MapperInput mapper_input;
+    mapper_input.timestamp = sync_data_.radar_time;
+    mapper_input.body_pose = sync_data_.pose_data.back();
+    mapper_input.lidar_origin = t_wl;
+    mapper_input.radar_origin = t_wr;
+    mapper_input.lidar_cloud = lidar_aft_mapped_;
+    mapper_input.radar_cloud = radar_aft_mapped_;
+
+    MapperUpdateStats stats;
+    stats.lidar_points =
+        mapper_input.lidar_cloud ? mapper_input.lidar_cloud->size() : 0;
+    stats.radar_points =
+        mapper_input.radar_cloud ? mapper_input.radar_cloud->size() : 0;
+
+    const auto wall_before = std::chrono::steady_clock::now();
+    const double cpu_before_ms = GetThreadCpuTimeMs();
+
+    mapper_->Update(mapper_input);
+
+    const double cpu_after_ms = GetThreadCpuTimeMs();
+    const auto wall_after = std::chrono::steady_clock::now();
+    const std::int64_t rss_after = GetProcessRssBytes();
+
+    stats.wall_time_ms =
+        std::chrono::duration<double, std::milli>(wall_after - wall_before)
+            .count();
+    stats.thread_cpu_time_ms = cpu_after_ms - cpu_before_ms;
+    if (stats.wall_time_ms > 0.0) {
+      stats.thread_cpu_utilization_percent =
+          100.0 * stats.thread_cpu_time_ms / stats.wall_time_ms;
+    }
+
+    const double process_cpu_time_ms = GetProcessCpuTimeMs();
+    const double process_wall_time_ms = GetSteadyTimeMs();
+    const double process_wall_delta_ms =
+        process_wall_time_ms - last_process_wall_time_ms_;
+    if (process_wall_delta_ms > 0.0) {
+      stats.process_cpu_utilization_percent =
+          100.0 * (process_cpu_time_ms - last_process_cpu_time_ms_) /
+          process_wall_delta_ms;
+    }
+    last_process_cpu_time_ms_ = process_cpu_time_ms;
+    last_process_wall_time_ms_ = process_wall_time_ms;
+
+    stats.rss_bytes = rss_after;
+
+    PublishUpdateStats(stats);
+
+    PublishOctomap(ros::Time(mapper_input.timestamp));
+  }
+}
+
+void Mapping::PublishUpdateStats(const MapperUpdateStats &stats) {
+  constexpr double kBytesPerMiB = 1024.0 * 1024.0;
+
+  std::ostringstream text;
+  text << std::fixed << std::setprecision(3) << "Mapper Update\n"
+       << "Update wall       : " << stats.wall_time_ms << " ms\n"
+       << "Update thread CPU : " << stats.thread_cpu_time_ms << " ms\n"
+       << std::setprecision(1) << "Update thread use : "
+       << stats.thread_cpu_utilization_percent << " %\n"
+       << "Process CPU avg   : " << stats.process_cpu_utilization_percent
+       << " %\n";
+  if (stats.rss_bytes >= 0) {
+    text << "RSS       : "
+         << static_cast<double>(stats.rss_bytes) / kBytesPerMiB << " MiB\n";
+  } else {
+    text << "RSS       : unavailable\n";
+  }
+  text << "Points    : LiDAR " << stats.lidar_points << " | Radar "
+       << stats.radar_points << " | Total "
+       << stats.lidar_points + stats.radar_points;
+
+  jsk_rviz_plugins::OverlayText message;
+  message.action = jsk_rviz_plugins::OverlayText::ADD;
+  message.width = 600;
+  message.height = 195;
+  message.left = 10;
+  message.top = 10;
+  message.line_width = 1;
+  message.text_size = 14.0;
+  message.font = "DejaVu Sans Mono";
+  message.bg_color.r = 0.0;
+  message.bg_color.g = 0.0;
+  message.bg_color.b = 0.0;
+  message.bg_color.a = 0.65;
+  message.fg_color.r = 0.3;
+  message.fg_color.g = 1.0;
+  message.fg_color.b = 0.3;
+  message.fg_color.a = 1.0;
+  message.text = text.str();
+  pub_update_stats_.publish(message);
+}
+
+void Mapping::PublishOctomap(const ros::Time &stamp) {
+  if (!mapper_ || !mapper_->GetOctree())
+    return;
+
+  if (options_.map_publish_period > 0.0 && has_published_octomap_ &&
+      stamp >= last_map_publish_stamp_ &&
+      (stamp - last_map_publish_stamp_).toSec() < options_.map_publish_period) {
+    return;
+  }
+
+  octomap_msgs::Octomap message;
+  if (!octomap_msgs::binaryMapToMsg(*mapper_->GetOctree(), message)) {
+    ROS_WARN_THROTTLE(1.0, "Failed to serialize OctoMap for visualization.");
+    return;
+  }
+
+  message.header.stamp = stamp;
+  message.header.frame_id = "world";
+  pub_octomap_.publish(message);
+  last_map_publish_stamp_ = stamp;
+  has_published_octomap_ = true;
 }
 } // namespace mapping

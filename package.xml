@@ -8,7 +8,9 @@
 
   <buildtool_depend>catkin</buildtool_depend>
   <depend>geometry_msgs</depend>
+  <depend>jsk_rviz_plugins</depend>
   <depend>nav_msgs</depend>
+  <depend>octomap_msgs</depend>
   <depend>roscpp</depend>
   <depend>rosbag</depend>
   <depend>sensor_msgs</depend>
@@ -16,6 +18,7 @@
   <depend>tf2_geometry_msgs</depend>
   <depend>pcl_conversions</depend>
   <depend>pcl_ros</depend>
+  <exec_depend>octomap_rviz_plugins</exec_depend>
 
 
   <!-- The export tag contains other, unspecified, tags -->

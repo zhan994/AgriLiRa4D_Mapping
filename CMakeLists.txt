@@ -11,7 +11,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s")
 ## is used, also find other catkin packages
 set(PACKAGE_DEPENDENCIES
   geometry_msgs
+  jsk_rviz_plugins
   nav_msgs
+  octomap_msgs
   roscpp
   rosbag
   sensor_msgs
@@ -33,23 +35,36 @@ find_package(PCL REQUIRED)
 # Find YAML
 find_package(yaml-cpp REQUIRED)
 
+# Find Octomap
+find_package(octomap REQUIRED)
+
 catkin_package(CATKIN_DEPENDS ${PACKAGE_DEPENDENCIES})
 
 
 ###########
 ## Build ##
 ###########
-aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR}/src  LIDAR_MAPPING_SRC)
-add_executable(mapping_node ${LIDAR_MAPPING_SRC})
+set(MAPPING_SRC
+  src/main.cpp
+  src/mapping.cpp
+  src/options.cpp
+  src/preprocess.cpp
+  src/mapper/mapper.cpp
+  src/mapper/mapper_octomap.cpp
+)
+
+add_executable(mapping_node ${MAPPING_SRC})
 target_include_directories(mapping_node PUBLIC 
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${catkin_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
+  ${OCTOMAP_INCLUDE_DIRS}
   ${YAML_CPP_INCLUDE_DIR}
 )
 target_link_libraries(mapping_node 
   ${catkin_LIBRARIES}
   ${PCL_LIBRARIES}
+  ${OCTOMAP_LIBRARIES}
   ${YAML_CPP_LIBRARIES}
 )
