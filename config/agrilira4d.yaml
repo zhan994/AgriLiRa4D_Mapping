@@ -23,7 +23,7 @@ preprocess:
   lidar_blind: 2
           
 mapper:
-  type: 0 # 0: OctoMapper
+  type: 0 # 0: Octomap, 1: Bonxai
   publish_period: 1.0 # seconds; <= 0 publishes every map update
   octomap:
     resolution: 0.5

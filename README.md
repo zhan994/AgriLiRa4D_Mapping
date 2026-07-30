@@ -2,7 +2,7 @@
 
 ***Mapping package for "AgriLiRa4D: A Multi-Sensor UAV Dataset for Robust SLAM in Challenging Agricultural Fields".***
 
-![](imgs/pipeline.jpg)
+<img src="imgs/Pipeline.png" style="zoom:67%;" />
 
 **Supported Platforms**
 
@@ -40,7 +40,6 @@ roslaunch mapping mapping.launch
 **Extrinsics for Robosense Airy LiDAR**
 
 ![](imgs/Airy_Extrinsics.png)
-
 
 
 

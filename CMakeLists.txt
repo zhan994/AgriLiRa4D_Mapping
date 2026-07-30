@@ -51,6 +51,7 @@ set(MAPPING_SRC
   src/preprocess.cpp
   src/mapper/mapper.cpp
   src/mapper/mapper_octomap.cpp
+  src/mapper/mapper_ioctree.cpp
 )
 
 add_executable(mapping_node ${MAPPING_SRC})
