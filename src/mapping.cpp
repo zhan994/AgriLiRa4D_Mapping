@@ -1,23 +1,29 @@
 #include "mapping.h"
 
+#include <algorithm>
 #include <jsk_rviz_plugins/OverlayText.h>
 #include <octomap_msgs/conversions.h>
+#include <stdexcept>
 
 namespace mapping {
 
 Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
     : nh_(nh), options_(options), lidar_aft_mapped_(new PointCloudType),
       radar_aft_mapped_(new RadarPointCloudType) {
+
+  if (options_.lidar_filter_num <= 0)
+    throw std::invalid_argument("lidar_filter_num must be positive");
+  
+  synchronizer_ = std::make_unique<Synchronizer>(
+      options_.sync_options,
+      [this](const SyncDiagnostics &info) { LogInvalidSync(info); });
   LoadPoseGT(options_.pose_gt_file);
 
-  data_.path.header.frame_id = "world";
-  data_.path.poses.clear();
+  // Initialize path message
+  path_.header.frame_id = "world";
+  path_.poses.clear();
 
-  sub_lidar_ =
-      nh_.subscribe(options_.lidar_topic, 10, &Mapping::LidarCBK, this);
-  sub_radar_ =
-      nh_.subscribe(options_.radar_topic, 10, &Mapping::RadarCBK, this);
-
+  // Initialize publishers
   pub_lidar_aft_mapped_ =
       nh_.advertise<sensor_msgs::PointCloud2>("lidar_aft_mapped", 10);
   pub_radar_aft_mapped_ =
@@ -30,6 +36,7 @@ Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
   pub_path_ = nh_.advertise<nav_msgs::Path>("/path", 10);
   pub_odom_ = nh_.advertise<nav_msgs::Odometry>("/odom", 10);
 
+  // Initialize the mapper based on the specified type
   if (options_.mapper_type == 0) {
     mapper_ = std::make_unique<OctoMapper>(options_.octomap_options);
   } else {
@@ -40,25 +47,39 @@ Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
   last_process_cpu_time_ms_ = GetProcessCpuTimeMs();
   last_process_wall_time_ms_ = GetSteadyTimeMs();
 
-  run_thread_ = std::make_shared<std::thread>(&Mapping::Run, this);
+  try {
+    run_thread_ = std::thread(&Mapping::Run, this);
+    sub_lidar_ =
+        nh_.subscribe(options_.lidar_topic, 10, &Mapping::LidarCBK, this);
+    sub_radar_ =
+        nh_.subscribe(options_.radar_topic, 10, &Mapping::RadarCBK, this);
+  } catch (...) {
+    Stop();
+    throw;
+  }
 }
 
-Mapping::~Mapping() {
-  ROS_INFO("Mapping thread is stopping...");
-  if (run_thread_ && run_thread_->joinable()) {
-    run_thread_->join();
-    run_thread_ = nullptr;
-  }
+Mapping::~Mapping() { Stop(); }
+
+void Mapping::Stop() {
+  ROS_INFO("Stopping Mapping...");
+
+  sub_lidar_.shutdown();
+  sub_radar_.shutdown();
+  if (synchronizer_)
+    synchronizer_->Stop();
+  
+    if (run_thread_.joinable())
+    run_thread_.join();
 }
 
 void Mapping::LoadPoseGT(const std::string &pose_gt_file) {
   std::ifstream ifs(pose_gt_file);
   if (!ifs.is_open()) {
-    ROS_ERROR("Failed to open GT file: %s", pose_gt_file.c_str());
-    return;
+    throw std::runtime_error("Failed to open GT file: " + pose_gt_file);
   }
 
-  data_.pose_buffer.clear();
+  std::size_t loaded_poses = 0;
   std::string line;
   while (std::getline(ifs, line)) {
     if (line.empty() || line[0] == '#')
@@ -73,16 +94,28 @@ void Mapping::LoadPoseGT(const std::string &pose_gt_file) {
 
     V3D t_flu_body(x, y, z);
     QD q_flu_body = QD(qw, qx, qy, qz);
+    if (!q_flu_body.coeffs().allFinite() || q_flu_body.norm() < 1e-12) {
+      ROS_WARN("Invalid GT quaternion: %s", line.c_str());
+      continue;
+    }
+    q_flu_body.normalize();
     M3D R_flu_body = q_flu_body.toRotationMatrix();
     Pose6D pose_flu_body(timestamp, V3D::Zero(), V3D::Zero(), V3D::Zero(),
                          t_flu_body, R_flu_body);
 
-    data_.pose_buffer.push_back(pose_flu_body);
+    if (synchronizer_->AddPoseData(pose_flu_body)) {
+      ++loaded_poses;
+    } else {
+      ROS_WARN("Rejected invalid or non-increasing GT pose: %s", line.c_str());
+    }
   }
 
   ifs.close();
-  ROS_INFO("Loaded GT trajectory with %lu poses from %s",
-           data_.pose_buffer.size(), pose_gt_file.c_str());
+  if (loaded_poses == 0)
+    throw std::runtime_error("GT trajectory contains no valid poses: " +
+                             pose_gt_file);
+  ROS_INFO("Loaded GT trajectory with %zu poses from %s", loaded_poses,
+           pose_gt_file.c_str());
 }
 
 void Mapping::LidarCBK(const sensor_msgs::PointCloud2ConstPtr &msg) {
@@ -90,52 +123,28 @@ void Mapping::LidarCBK(const sensor_msgs::PointCloud2ConstPtr &msg) {
   CloudPtr cloud(new PointCloudType);
   Preprocess::RSAiry2PCL(msg, cloud, options_.lidar_filter_num,
                          options_.lidar_blind);
+  if (cloud->empty()) {
+    ROS_WARN_THROTTLE(1.0, "LiDAR cloud is empty after preprocessing.");
+    return;
+  }
+
+  if (std::any_of(cloud->begin(), cloud->end(), [](const PointType &point) {
+        return !std::isfinite(point.curvature);
+      })) {
+    ROS_WARN_THROTTLE(1.0, "LiDAR cloud contains invalid point timestamps.");
+    return;
+  }
+
   std::sort(cloud->points.begin(), cloud->points.end(),
             [](const PointType &a, const PointType &b) {
               return a.curvature < b.curvature;
             });
 
-  // Extract timestamps for each point
-  double timestamp = msg->header.stamp.toSec();
-  std::deque<PointStamped> lidar_points_stamped;
-  int cloud_size = cloud->points.size();
-  for (int i = 0; i < cloud_size; i++) {
-    PointStamped pt_stamped;
-    pt_stamped.x = cloud->points[i].x;
-    pt_stamped.y = cloud->points[i].y;
-    pt_stamped.z = cloud->points[i].z;
-    pt_stamped.intensity = cloud->points[i].intensity;
-    pt_stamped.timestamp =
-        timestamp + cloud->points[i].curvature / 1000.0; // convert back to `s`
-    lidar_points_stamped.push_back(pt_stamped);
+  const double timestamp = msg->header.stamp.toSec();
+  if (!synchronizer_->AddLidarData(timestamp, std::move(cloud))) {
+    ROS_WARN_THROTTLE(1.0, "Synchronizer rejected LiDAR input at %.6f",
+                      timestamp);
   }
-  ROS_INFO("Processed LiDAR points %lu, timestamp from %.4f to %.4f",
-           lidar_points_stamped.size(), lidar_points_stamped.front().timestamp,
-           lidar_points_stamped.back().timestamp);
-
-  // change data buffer
-  data_.mtx.lock();
-
-  // check timestamp order
-  if (timestamp < data_.last_lidar_time) {
-    ROS_ERROR("LiDAR time Sync ERROR");
-    data_.lidar_buffer.clear();
-  }
-
-  // update data buffer
-  // note: first radar time init
-  if (data_.last_radar_time < 0) {
-    ROS_WARN("Radar time not initialized yet, initializing to lidar timestamp");
-    data_.last_radar_time = timestamp;
-  }
-
-  data_.last_lidar_time = timestamp;
-  data_.lidar_buffer.emplace_back(timestamp, cloud);
-  data_.lidar_points_stamped_buffer.insert(
-      data_.lidar_points_stamped_buffer.end(), lidar_points_stamped.begin(),
-      lidar_points_stamped.end());
-
-  data_.mtx.unlock();
 }
 
 void Mapping::RadarCBK(const sensor_msgs::PointCloud2ConstPtr &msg) {
@@ -144,266 +153,178 @@ void Mapping::RadarCBK(const sensor_msgs::PointCloud2ConstPtr &msg) {
   RadarCloudPtr cloud(new RadarPointCloudType);
   Preprocess::Radar2PCL(msg, cloud);
 
-  // change data buffer
-  data_.mtx.lock();
-
-  if (timestamp < data_.last_radar_time) {
-    ROS_ERROR("Radar time Sync ERROR");
-    data_.radar_buffer.clear();
+  if (!synchronizer_->AddRadarData(timestamp, std::move(cloud))) {
+    ROS_WARN_THROTTLE(1.0, "Synchronizer rejected Radar input at %.6f",
+                      timestamp);
   }
-
-  data_.radar_buffer.emplace_back(timestamp, cloud);
-  data_.mtx.unlock();
 }
 
 void Mapping::Run() {
   ROS_INFO("Mapping thread is running...");
-  ros::Rate rate(20); // 100 Hz
-  while (ros::ok()) {
-    if (SyncGroup()) {
-      // Process synchronized data group
-      if (options_.verbose) {
-        ROS_INFO(
-            "---------------------------------------------------------------"
-            "-----------------");
-        ROS_INFO("Synchronized from %.4f to %.4f", sync_data_.lidar_beg_time,
-                 sync_data_.radar_time);
-        ROS_INFO("========> Radar points %lu from %.4f",
-                 sync_data_.radar_cloud->points.size(), sync_data_.radar_time);
-        ROS_INFO("========> Pose data %lu from %.4f to %.4f",
-                 sync_data_.pose_data.size(),
-                 sync_data_.pose_data.front().offset,
-                 sync_data_.pose_data.back().offset);
-        ROS_INFO("========> LiDAR data %lu from %.4f to %.4f",
-                 sync_data_.lidar_cloud->points.size(),
-                 sync_data_.lidar_points_stamped.front().timestamp,
-                 sync_data_.lidar_points_stamped.back().timestamp);
-        ROS_INFO(
-            "---------------------------------------------------------------"
-            "-----------------");
+  MeasureGroup group;
+  while (synchronizer_->WaitPop(group)) {
+    if (options_.verbose) {
+      if (group.last_radar_time >= 0.0) {
+        ROS_INFO("Sync window (last Radar, current Radar]: (%.9f, %.9f]",
+                 group.last_radar_time, group.radar_time);
+      } else {
+        ROS_INFO("Sync window: first slice, no previous Radar; current Radar %.9f",
+                 group.radar_time);
       }
-
-      Process();
-
-      // Publish processed data
-      sensor_msgs::PointCloud2 lidar_aft_mapped_msg;
-      pcl::toROSMsg(*lidar_aft_mapped_, lidar_aft_mapped_msg);
-      lidar_aft_mapped_msg.header.stamp = ros::Time(sync_data_.radar_time);
-      lidar_aft_mapped_msg.header.frame_id = "world";
-      pub_lidar_aft_mapped_.publish(lidar_aft_mapped_msg);
-
-      sensor_msgs::PointCloud2 radar_aft_mapped_msg;
-      pcl::toROSMsg(*radar_aft_mapped_, radar_aft_mapped_msg);
-      radar_aft_mapped_msg.header.stamp = ros::Time(sync_data_.radar_time);
-      radar_aft_mapped_msg.header.frame_id = "world";
-      pub_radar_aft_mapped_.publish(radar_aft_mapped_msg);
-
-      // Publish path
-      geometry_msgs::PoseStamped pose_msg;
-      pose_msg.header.stamp = ros::Time(sync_data_.radar_time);
-      pose_msg.header.frame_id = "world";
-      pose_msg.pose.position.x = sync_data_.pose_data.back().trans.x();
-      pose_msg.pose.position.y = sync_data_.pose_data.back().trans.y();
-      pose_msg.pose.position.z = sync_data_.pose_data.back().trans.z();
-      QD q = QD(sync_data_.pose_data.back().rot);
-      pose_msg.pose.orientation.x = q.x();
-      pose_msg.pose.orientation.y = q.y();
-      pose_msg.pose.orientation.z = q.z();
-      pose_msg.pose.orientation.w = q.w();
-      data_.path.header.stamp = ros::Time(sync_data_.radar_time);
-      data_.path.poses.push_back(pose_msg);
-      pub_path_.publish(data_.path);
-
-      // Publish synchronized odometry
-      nav_msgs::Odometry odom_msg;
-      odom_msg.header.stamp = ros::Time(sync_data_.radar_time);
-      odom_msg.header.frame_id = "world";
-      odom_msg.pose.pose.position.x = sync_data_.pose_data.back().trans.x();
-      odom_msg.pose.pose.position.y = sync_data_.pose_data.back().trans.y();
-      odom_msg.pose.pose.position.z = sync_data_.pose_data.back().trans.z();
-      odom_msg.pose.pose.orientation.x = q.x();
-      odom_msg.pose.pose.orientation.y = q.y();
-      odom_msg.pose.pose.orientation.z = q.z();
-      odom_msg.pose.pose.orientation.w = q.w();
-      pub_odom_.publish(odom_msg);
+      ROS_INFO("  LiDAR: %zu points, time [%.9f, %.9f]",
+               group.lidar_cloud->size(),
+               group.lidar_points_stamped.front().timestamp,
+               group.lidar_points_stamped.back().timestamp);
+      ROS_INFO("  Radar: %zu points, timestamp %.9f",
+               group.radar_cloud->size(), group.radar_time);
+      ROS_INFO("  Pose : %zu samples, time [%.9f, %.9f]",
+               group.pose_data.size(), group.pose_data.front().offset,
+               group.pose_data.back().offset);
     }
-
-    rate.sleep();
+    const MapperInput input = Process(group);
+    UpdateMap(input);
+    PublishResults(group);
   }
 }
 
-bool Mapping::SyncGroup() {
-  data_.mtx.lock();
-
-  // last_radar_time          radar_front_time
-  //    |<--- LiDAR points consumed --->|
-  //    |<------ Pose data consumed --->|
-  //    |                               |
-  //    +-------------------------------+
-  //          一个 sync 时间窗口
-
-  // step: 1 check empty
-  if (data_.radar_buffer.empty() || data_.lidar_points_stamped_buffer.empty()) {
-    ROS_WARN_THROTTLE(1.0,
-                      "Radar or LiDAR buffer is empty. Waiting for more data.");
-    data_.mtx.unlock();
-    return false;
-  }
-
-  // step: 2 check lidar and imu over radar time
-  if (data_.lidar_points_stamped_buffer.back().timestamp <=
-      data_.radar_buffer.front().first) {
-    ROS_WARN_THROTTLE(1.0,
-                      "LiDAR points are all before the first radar timestamp.");
-    data_.mtx.unlock();
-    return false;
-  }
-
-  // step: 3 clear radar which is useless before
-  while (data_.lidar_points_stamped_buffer.front().timestamp >=
-         data_.radar_buffer.front().first) {
-    data_.radar_buffer.pop_front();
-
-    if (data_.radar_buffer.empty()) {
-      ROS_WARN(
-          "Radar buffer is empty after clearing. Waiting for more radar data.");
-      data_.mtx.unlock();
-      return false;
-    }
-  }
-
-  // step: 4 sync poses
-  sync_data_.pose_data.clear();
-  while (!data_.pose_buffer.empty() &&
-         data_.pose_buffer.front().offset <= data_.radar_buffer.front().first) {
-    sync_data_.pose_data.push_back(data_.pose_buffer.front());
-    data_.pose_buffer.pop_front();
-  }
-
-  // step: 5 sync lidar points
-  CloudPtr lidar_cloud(new PointCloudType);
-  sync_data_.lidar_points_stamped.clear();
-  sync_data_.lidar_beg_time = data_.last_radar_time;
-  while (!data_.lidar_points_stamped_buffer.empty() &&
-         data_.lidar_points_stamped_buffer.front().timestamp <=
-             data_.radar_buffer.front().first) {
-    sync_data_.lidar_points_stamped.push_back(
-        data_.lidar_points_stamped_buffer.front());
-    sync_data_.lidar_end_time =
-        data_.lidar_points_stamped_buffer.front().timestamp;
-
-    // add to lidar cloud
-    PointType pt;
-    pt.x = data_.lidar_points_stamped_buffer.front().x;
-    pt.y = data_.lidar_points_stamped_buffer.front().y;
-    pt.z = data_.lidar_points_stamped_buffer.front().z;
-    pt.intensity = data_.lidar_points_stamped_buffer.front().intensity;
-    pt.normal_x = 0;
-    pt.normal_y = 0;
-    pt.normal_z = 0;
-    pt.curvature = (data_.lidar_points_stamped_buffer.front().timestamp -
-                    sync_data_.lidar_beg_time) *
-                   1000.0; // ms
-    lidar_cloud->points.push_back(pt);
-
-    data_.lidar_points_stamped_buffer.pop_front();
-  }
-  lidar_cloud->width = sync_data_.lidar_points_stamped.size();
-  lidar_cloud->height = 1;
-  lidar_cloud->is_dense = true;
-  sync_data_.lidar_cloud = lidar_cloud;
-
-  // step: 6 sync radar cloud
-  sync_data_.radar_time = data_.radar_buffer.front().first;
-  sync_data_.radar_cloud = data_.radar_buffer.front().second;
-  data_.last_radar_time =
-      data_.radar_buffer.front().first; // update last radar time after sync
-  data_.radar_buffer.pop_front();
-
-  data_.mtx.unlock();
-
-  if (sync_data_.pose_data.size() < options_.pose_num_threshold) {
-    ROS_WARN(
-        "Not enough pose data at radar time %.6f. Required: %d, available: %zu",
-        sync_data_.radar_time, options_.pose_num_threshold,
-        sync_data_.pose_data.size());
-    return false;
-  }
-
-  return true;
+void Mapping::LogInvalidSync(const SyncDiagnostics &info) const {
+  std::ostringstream text;
+  text << std::fixed << std::setprecision(9)
+       << "Discarding sync window: "
+       << (info.pose_count < info.required_poses ? "insufficient poses; " : "")
+       << (!info.has_start_pose ? "missing start-boundary pose; " : "")
+       << "required poses " << info.required_poses
+       << "\n  Last Radar: ";
+  if (info.last_radar_time >= 0.0)
+    text << info.last_radar_time;
+  else
+    text << "none (first slice)";
+  text << "\n  Window reference: " << info.window_begin_time
+       << "\n  LiDAR: " << info.lidar_points << " points, time ["
+       << info.lidar_begin_time << ", " << info.lidar_end_time << "]"
+       << "\n  Radar: " << info.radar_points << " points, timestamp " << info.radar_time
+       << "\n  Pose : " << info.pose_count << " samples";
+  if (info.pose_count > 0)
+    text << ", time [" << info.pose_begin_time << ", " << info.pose_end_time << "]";
+  else
+    text << ", no pose at/before Radar; first available " << info.first_available_pose_time;
+  ROS_WARN_STREAM(text.str());
 }
 
-void Mapping::Process() {
-  Preprocess::UndistortPcl(sync_data_, options_.R_bl, options_.t_bl);
+void Mapping::PublishResults(const MeasureGroup &group) {
+  // Publish processed data
+  sensor_msgs::PointCloud2 lidar_aft_mapped_msg;
+  pcl::toROSMsg(*lidar_aft_mapped_, lidar_aft_mapped_msg);
+  lidar_aft_mapped_msg.header.stamp = ros::Time(group.radar_time);
+  lidar_aft_mapped_msg.header.frame_id = "world";
+  pub_lidar_aft_mapped_.publish(lidar_aft_mapped_msg);
 
-  M3D R_wb = sync_data_.pose_data.back().rot;
-  V3D t_wb = sync_data_.pose_data.back().trans;
+  sensor_msgs::PointCloud2 radar_aft_mapped_msg;
+  pcl::toROSMsg(*radar_aft_mapped_, radar_aft_mapped_msg);
+  radar_aft_mapped_msg.header.stamp = ros::Time(group.radar_time);
+  radar_aft_mapped_msg.header.frame_id = "world";
+  pub_radar_aft_mapped_.publish(radar_aft_mapped_msg);
 
-  // Compute the world to LiDAR and world to Radar transformations
+  // Publish path
+  geometry_msgs::PoseStamped pose_msg;
+  pose_msg.header.stamp = ros::Time(group.radar_time);
+  pose_msg.header.frame_id = "world";
+  pose_msg.pose.position.x = group.pose_data.back().trans.x();
+  pose_msg.pose.position.y = group.pose_data.back().trans.y();
+  pose_msg.pose.position.z = group.pose_data.back().trans.z();
+  QD q = QD(group.pose_data.back().rot);
+  pose_msg.pose.orientation.x = q.x();
+  pose_msg.pose.orientation.y = q.y();
+  pose_msg.pose.orientation.z = q.z();
+  pose_msg.pose.orientation.w = q.w();
+  path_.header.stamp = ros::Time(group.radar_time);
+  path_.poses.push_back(pose_msg);
+  pub_path_.publish(path_);
+
+  // Publish synchronized odometry
+  nav_msgs::Odometry odom_msg;
+  odom_msg.header.stamp = ros::Time(group.radar_time);
+  odom_msg.header.frame_id = "world";
+  odom_msg.pose.pose.position.x = group.pose_data.back().trans.x();
+  odom_msg.pose.pose.position.y = group.pose_data.back().trans.y();
+  odom_msg.pose.pose.position.z = group.pose_data.back().trans.z();
+  odom_msg.pose.pose.orientation.x = q.x();
+  odom_msg.pose.pose.orientation.y = q.y();
+  odom_msg.pose.pose.orientation.z = q.z();
+  odom_msg.pose.pose.orientation.w = q.w();
+  pub_odom_.publish(odom_msg);
+}
+
+MapperInput Mapping::Process(MeasureGroup &group) {
+  Preprocess::UndistortPcl(group, options_.R_bl, options_.t_bl);
+
+  M3D R_wb = group.pose_data.back().rot;
+  V3D t_wb = group.pose_data.back().trans;
+
+  // Transform LiDAR and Radar observations into the world frame.
   M3D R_wl = R_wb * options_.R_bl;
   V3D t_wl = R_wb * options_.t_bl + t_wb;
 
-  // Compute the world to Radar transformation
+  // Radar-to-world transformation uses the composed body/radar extrinsics.
   M3D R_wr = R_wb * options_.R_br;
   V3D t_wr = R_wb * options_.t_br + t_wb;
 
-  Preprocess::TransformPointCloud(sync_data_.lidar_cloud, R_wl, t_wl,
+  Preprocess::TransformPointCloud(group.lidar_cloud, R_wl, t_wl,
                                   lidar_aft_mapped_);
 
-  Preprocess::TransformRadarPointCloud(sync_data_.radar_cloud, R_wr, t_wr,
+  Preprocess::TransformRadarPointCloud(group.radar_cloud, R_wr, t_wr,
                                        radar_aft_mapped_);
 
-  if (mapper_) {
-    MapperInput mapper_input;
-    mapper_input.timestamp = sync_data_.radar_time;
-    mapper_input.body_pose = sync_data_.pose_data.back();
-    mapper_input.lidar_origin = t_wl;
-    mapper_input.radar_origin = t_wr;
-    mapper_input.lidar_cloud = lidar_aft_mapped_;
-    mapper_input.radar_cloud = radar_aft_mapped_;
+  MapperInput input;
+  input.timestamp = group.radar_time;
+  input.body_pose = group.pose_data.back();
+  input.lidar_origin = t_wl;
+  input.radar_origin = t_wr;
+  input.lidar_cloud = lidar_aft_mapped_;
+  input.radar_cloud = radar_aft_mapped_;
+  return input;
+}
 
-    MapperUpdateStats stats;
-    stats.lidar_points =
-        mapper_input.lidar_cloud ? mapper_input.lidar_cloud->size() : 0;
-    stats.radar_points =
-        mapper_input.radar_cloud ? mapper_input.radar_cloud->size() : 0;
+void Mapping::UpdateMap(const MapperInput &input) {
+  MapperUpdateStats stats;
+  stats.lidar_points = input.lidar_cloud ? input.lidar_cloud->size() : 0;
+  stats.radar_points = input.radar_cloud ? input.radar_cloud->size() : 0;
 
-    const auto wall_before = std::chrono::steady_clock::now();
-    const double cpu_before_ms = GetThreadCpuTimeMs();
+  const auto wall_before = std::chrono::steady_clock::now();
+  const double cpu_before_ms = GetThreadCpuTimeMs();
 
-    mapper_->Update(mapper_input);
+  mapper_->Update(input);
 
-    const double cpu_after_ms = GetThreadCpuTimeMs();
-    const auto wall_after = std::chrono::steady_clock::now();
-    const std::int64_t rss_after = GetProcessRssBytes();
+  const double cpu_after_ms = GetThreadCpuTimeMs();
+  const auto wall_after = std::chrono::steady_clock::now();
+  const std::int64_t rss_after = GetProcessRssBytes();
 
-    stats.wall_time_ms =
-        std::chrono::duration<double, std::milli>(wall_after - wall_before)
-            .count();
-    stats.thread_cpu_time_ms = cpu_after_ms - cpu_before_ms;
-    if (stats.wall_time_ms > 0.0) {
-      stats.thread_cpu_utilization_percent =
-          100.0 * stats.thread_cpu_time_ms / stats.wall_time_ms;
-    }
-
-    const double process_cpu_time_ms = GetProcessCpuTimeMs();
-    const double process_wall_time_ms = GetSteadyTimeMs();
-    const double process_wall_delta_ms =
-        process_wall_time_ms - last_process_wall_time_ms_;
-    if (process_wall_delta_ms > 0.0) {
-      stats.process_cpu_utilization_percent =
-          100.0 * (process_cpu_time_ms - last_process_cpu_time_ms_) /
-          process_wall_delta_ms;
-    }
-    last_process_cpu_time_ms_ = process_cpu_time_ms;
-    last_process_wall_time_ms_ = process_wall_time_ms;
-
-    stats.rss_bytes = rss_after;
-
-    PublishUpdateStats(stats);
-
-    PublishOctomap(ros::Time(mapper_input.timestamp));
+  stats.wall_time_ms =
+      std::chrono::duration<double, std::milli>(wall_after - wall_before)
+          .count();
+  stats.thread_cpu_time_ms = cpu_after_ms - cpu_before_ms;
+  if (stats.wall_time_ms > 0.0) {
+    stats.thread_cpu_utilization_percent =
+        100.0 * stats.thread_cpu_time_ms / stats.wall_time_ms;
   }
+
+  const double process_cpu_time_ms = GetProcessCpuTimeMs();
+  const double process_wall_time_ms = GetSteadyTimeMs();
+  const double process_wall_delta_ms =
+      process_wall_time_ms - last_process_wall_time_ms_;
+  if (process_wall_delta_ms > 0.0) {
+    stats.process_cpu_utilization_percent =
+        100.0 * (process_cpu_time_ms - last_process_cpu_time_ms_) /
+        process_wall_delta_ms;
+  }
+  last_process_cpu_time_ms_ = process_cpu_time_ms;
+  last_process_wall_time_ms_ = process_wall_time_ms;
+
+  stats.rss_bytes = rss_after;
+
+  PublishUpdateStats(stats);
+
+  PublishOctomap(ros::Time(input.timestamp));
 }
 
 void Mapping::PublishUpdateStats(const MapperUpdateStats &stats) {
@@ -413,8 +334,9 @@ void Mapping::PublishUpdateStats(const MapperUpdateStats &stats) {
   text << std::fixed << std::setprecision(3) << "Mapper Update\n"
        << "Update wall       : " << stats.wall_time_ms << " ms\n"
        << "Update thread CPU : " << stats.thread_cpu_time_ms << " ms\n"
-       << std::setprecision(1) << "Update thread use : "
-       << stats.thread_cpu_utilization_percent << " %\n"
+       << std::setprecision(1)
+       << "Update thread use : " << stats.thread_cpu_utilization_percent
+       << " %\n"
        << "Process CPU avg   : " << stats.process_cpu_utilization_percent
        << " %\n";
   if (stats.rss_bytes >= 0) {

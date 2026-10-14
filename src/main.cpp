@@ -14,17 +14,21 @@
 
 int main(int argc, char **argv) {
   if (argc < 2) {
-    std::cout << "usage: ./rlio_node <path-to-cfg>/cfg.yaml" << std::endl;
+    std::cout << "usage: ./mapping_node <path-to-cfg>/cfg.yaml" << std::endl;
     return -1;
   }
 
   ros::init(argc, argv, "mapping_node");
   ros::NodeHandle nh;
 
-  std::string cfg_fn = argv[1];
-  mapping::Options options = mapping::LoadOptionsFromFile(cfg_fn);
-  mapping::Mapping mapping(nh, options);
-
-  ros::spin();
+  try {
+    const auto options = mapping::LoadOptionsFromFile(argv[1]);
+    mapping::Mapping mapping(nh, options);
+    ros::spin();
+    mapping.Stop(); // Close synchronized output, then drain and join the mapper worker.
+  } catch (const std::exception &error) {
+    ROS_FATAL("Mapping failed: %s", error.what());
+    return 1;
+  }
   return 0;
 }

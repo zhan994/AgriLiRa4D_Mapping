@@ -25,7 +25,8 @@ bool IsValidPoint(const double &x, const double &y, const double &z);
 /**
  * @brief One synchronized observation expressed in the world frame.
  *
- * Mapping owns synchronization, motion compensation and extrinsic transforms.
+ * Synchronizer owns time synchronization; Mapping owns motion compensation
+ * and extrinsic transforms.
  * A mapper backend only consumes the resulting observation and maintains its
  * own map representation.
  */
@@ -42,6 +43,9 @@ struct MapperInput {
 
 class Mapper {
 public:
+  // No internal worker or locking. All methods run on the mapping thread,
+  // or on the owner thread before startup / after the mapping thread is joined.
+  // GetOctree() returns a borrowed pointer; do not access it concurrently with Update().
   virtual ~Mapper() = default;
   virtual void Update(const MapperInput &input) = 0;
   virtual void Reset() = 0;

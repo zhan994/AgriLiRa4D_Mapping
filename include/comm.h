@@ -184,6 +184,9 @@ struct MeasureGroup {
     pose_data.clear();
   }
 
+  // Previous consumed Radar boundary; -1 for the first slice.
+  double last_radar_time = -1.0;
+  // Reference for LiDAR point offsets (previous Radar, or first point at startup).
   double lidar_beg_time = -1.0;
   double lidar_end_time = -1.0;
   double radar_time = -1.0;

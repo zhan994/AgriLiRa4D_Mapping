@@ -61,24 +61,15 @@ void Preprocess::UndistortPcl(MeasureGroup &meas, const M3D &R_bl,
   M3D R_wb = meas.pose_data.back().rot;
   V3D t_wb = meas.pose_data.back().trans;
 
-  // iterate through LiDAR points in reverse order to undistort them
+  // Iterate through poses and points in reverse chronological order.
   auto it_pcl = meas.lidar_cloud->points.end() - 1;
   for (auto it_kp = meas.pose_data.end(); it_kp != meas.pose_data.begin();) {
-    --it_kp; // move to the previous pose
-
-    // cal offset between current pose and lidar begin time
+    --it_kp;
     double offset = it_kp->offset - meas.lidar_beg_time;
-    // std::cout << "Pose Offset: " << offset << "s" << std::endl;
-
-    // get the pose at the current keyframe
     M3D R_wb_kp = it_kp->rot;
     V3D t_wb_kp = it_kp->trans;
 
-    // iterate through LiDAR points and undistort them based on the current
-    // keyframe pose
-    int cnt = 0;
     for (; it_pcl->curvature / double(1000) > offset; --it_pcl) {
-      cnt++;
       V3D pt(it_pcl->x, it_pcl->y, it_pcl->z);
       V3D pt_compensated =
           R_bl.transpose() *
@@ -89,17 +80,18 @@ void Preprocess::UndistortPcl(MeasureGroup &meas, const M3D &R_bl,
       it_pcl->y = pt_compensated.y();
       it_pcl->z = pt_compensated.z();
 
+      // All points have been processed; do not revisit the first point
+      // when the outer loop advances to an earlier pose.
       if (it_pcl == meas.lidar_cloud->points.begin())
-        break;
+        return;
     }
-    // std::cout << "Undistorted " << cnt << " points for this keyframe."
-    //           << std::endl;
   }
 }
 
 void Preprocess::TransformPointCloud(const CloudPtr &cloud, const M3D &r,
                                      const V3D &t, CloudPtr &output) {
   if (cloud->empty()) {
+    output->clear();
     std::cout << "Warning: Transforming empty point cloud." << std::endl;
     return;
   }
@@ -115,6 +107,7 @@ void Preprocess::TransformRadarPointCloud(const RadarCloudPtr &cloud,
                                           const M3D &r, const V3D &t,
                                           RadarCloudPtr &output) {
   if (cloud->empty()) {
+    output->clear();
     std::cout << "Warning: Transforming empty point cloud." << std::endl;
     return;
   }

@@ -17,6 +17,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include "mapper/mapper_octomap.h"
+#include "sync.h"
 
 namespace mapping {
 struct Options {
@@ -45,7 +46,7 @@ struct Options {
 
   int lidar_filter_num = 1;
   double lidar_blind = 2.0;
-  int pose_num_threshold = 8;
+  Synchronizer::Options sync_options = Synchronizer::Options();
 
   int mapper_type = 0; // 0: OctoMapper
   double map_publish_period = 1.0; // seconds; <= 0 publishes every update

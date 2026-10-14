@@ -17,10 +17,12 @@ extrinsics:
   t_lr: [0.11216, 0, -0.03737]
 
 preprocess:
-  pose_num_threshold: 7
-
   lidar_filter_num: 1
   lidar_blind: 2
+
+sync:
+  pose_num_threshold: 7
+  output_queue_capacity: 8
           
 mapper:
   type: 0 # 0: Octomap, 1: Bonxai

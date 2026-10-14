@@ -48,10 +48,10 @@ set(MAPPING_SRC
   src/main.cpp
   src/mapping.cpp
   src/options.cpp
+  src/sync.cpp
   src/preprocess.cpp
   src/mapper/mapper.cpp
   src/mapper/mapper_octomap.cpp
-  src/mapper/mapper_ioctree.cpp
 )
 
 add_executable(mapping_node ${MAPPING_SRC})
@@ -69,3 +69,29 @@ target_link_libraries(mapping_node
   ${OCTOMAP_LIBRARIES}
   ${YAML_CPP_LIBRARIES}
 )
+
+if(CATKIN_ENABLE_TESTING)
+  add_executable(synchronizer_test
+    tests/synchronizer_test.cpp src/sync.cpp src/preprocess.cpp)
+  target_include_directories(synchronizer_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${catkin_INCLUDE_DIRS}
+    ${EIGEN3_INCLUDE_DIRS}
+    ${PCL_INCLUDE_DIRS}
+  )
+  target_link_libraries(synchronizer_test ${catkin_LIBRARIES} ${PCL_LIBRARIES})
+  add_test(NAME synchronizer_test COMMAND synchronizer_test)
+  set_tests_properties(synchronizer_test PROPERTIES TIMEOUT 20)
+
+  add_executable(mapper_test tests/mapper_test.cpp
+    src/mapper/mapper.cpp src/mapper/mapper_octomap.cpp)
+  target_include_directories(mapper_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${catkin_INCLUDE_DIRS}
+    ${EIGEN3_INCLUDE_DIRS}
+    ${PCL_INCLUDE_DIRS}
+    ${OCTOMAP_INCLUDE_DIRS}
+  )
+  target_link_libraries(mapper_test ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES})
+  add_test(NAME mapper_test COMMAND mapper_test)
+endif()
