@@ -2,7 +2,7 @@
 
 ***Mapping package for "AgriLiRa4D: A Multi-Sensor UAV Dataset for Robust SLAM in Challenging Agricultural Fields".***
 
-<img src="imgs/Pipeline.png" style="zoom:67%;" />
+<img src="imgs/Pipeline.png" style="zoom:70%;" />
 
 **Supported Platforms**
 
