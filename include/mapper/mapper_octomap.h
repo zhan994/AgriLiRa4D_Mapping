@@ -9,8 +9,8 @@
  *
  */
 
-#ifndef OCTOMAP_MAPPER_H
-#define OCTOMAP_MAPPER_H
+#ifndef MAPPER_OCTOMAP_H
+#define MAPPER_OCTOMAP_H
 
 #include <octomap/octomap.h>
 
@@ -47,4 +47,4 @@ private:
 };
 
 } // namespace mapping
-#endif // OCTOMAP_MAPPER_H
+#endif // MAPPER_OCTOMAP_H
