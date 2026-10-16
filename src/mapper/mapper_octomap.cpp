@@ -58,8 +58,8 @@ void OctoMapper::Update(const MapperInput &input) {
       free_cells.insert(key_ray_.begin(), key_ray_.end());
     }
 
-    // 最大测距范围内更新hit
-    if (len <= options_.max_range) {
+    // 严格小于最大测距范围时更新hit
+    if (len < options_.max_range) {
       // hit
       octomap::OcTreeKey tgt_key;
       if (octree_->coordToKeyChecked(tgt_pt, tgt_key)) {
