@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <jsk_rviz_plugins/OverlayText.h>
-#include <octomap_msgs/conversions.h>
 #include <stdexcept>
 
 namespace mapping {
@@ -28,8 +27,8 @@ Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
       nh_.advertise<sensor_msgs::PointCloud2>("lidar_aft_mapped", 10);
   pub_radar_aft_mapped_ =
       nh_.advertise<sensor_msgs::PointCloud2>("radar_aft_mapped", 10);
-  pub_octomap_ =
-      nh_.advertise<octomap_msgs::Octomap>("octomap_binary", 1, true);
+  pub_map_cloud_ =
+      nh_.advertise<sensor_msgs::PointCloud2>("map_cloud", 1, true);
   pub_update_stats_ =
       nh_.advertise<jsk_rviz_plugins::OverlayText>("mapper_update_stats", 1);
 
@@ -324,7 +323,7 @@ void Mapping::UpdateMap(const MapperInput &input) {
 
   PublishUpdateStats(stats);
 
-  PublishOctomap(ros::Time(input.timestamp));
+  PublishMapCloud(ros::Time(input.timestamp));
 }
 
 void Mapping::PublishUpdateStats(const MapperUpdateStats &stats) {
@@ -370,26 +369,25 @@ void Mapping::PublishUpdateStats(const MapperUpdateStats &stats) {
   pub_update_stats_.publish(message);
 }
 
-void Mapping::PublishOctomap(const ros::Time &stamp) {
-  if (!mapper_ || !mapper_->GetOctree())
+void Mapping::PublishMapCloud(const ros::Time &stamp) {
+  if (!mapper_)
     return;
 
-  if (options_.map_publish_period > 0.0 && has_published_octomap_ &&
+  if (options_.map_publish_period > 0.0 && has_published_map_ &&
       stamp >= last_map_publish_stamp_ &&
       (stamp - last_map_publish_stamp_).toSec() < options_.map_publish_period) {
     return;
   }
 
-  octomap_msgs::Octomap message;
-  if (!octomap_msgs::binaryMapToMsg(*mapper_->GetOctree(), message)) {
-    ROS_WARN_THROTTLE(1.0, "Failed to serialize OctoMap for visualization.");
-    return;
-  }
+  PointCloudType cloud;
+  mapper_->GetOccupiedCloud(cloud);
+  sensor_msgs::PointCloud2 message;
+  pcl::toROSMsg(cloud, message);
 
   message.header.stamp = stamp;
   message.header.frame_id = "world";
-  pub_octomap_.publish(message);
+  pub_map_cloud_.publish(message);
   last_map_publish_stamp_ = stamp;
-  has_published_octomap_ = true;
+  has_published_map_ = true;
 }
 } // namespace mapping

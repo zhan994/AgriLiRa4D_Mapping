@@ -1,5 +1,6 @@
 #include "mapper/mapper_octomap.h"
 
+#include <pcl/io/pcd_io.h>
 #include <stdexcept>
 
 namespace mapping {
@@ -91,7 +92,46 @@ bool OctoMapper::Save(const std::string &path) const {
     ROS_ERROR("OctoMapper: octree is not initialized.");
     return false;
   }
-  return octree_->writeBinary(path);
+  PointCloudType cloud;
+  GetOccupiedCloud(cloud);
+  try {
+    return pcl::io::savePCDFileBinary(path, cloud) == 0;
+  } catch (const pcl::IOException &error) {
+    ROS_ERROR("OctoMapper: Failed to save occupied cloud: %s", error.what());
+    return false;
+  }
+}
+
+void OctoMapper::GetOccupiedCloud(PointCloudType &output) const {
+  output.clear();
+  output.header.frame_id = "world";
+  output.is_dense = true;
+  if (!octree_)
+    return;
+
+  for (auto it = octree_->begin_leafs(), end = octree_->end_leafs();
+       it != end; ++it) {
+    if (!octree_->isNodeOccupied(*it))
+      continue;
+
+    // updateNode() can prune identical children. Enumerate their base-resolution
+    // keys without expanding or otherwise modifying the stored tree.
+    const auto first = it.getIndexKey();
+    const unsigned side = 1u << (octree_->getTreeDepth() - it.getDepth());
+    for (unsigned x = 0; x < side; ++x) {
+      for (unsigned y = 0; y < side; ++y) {
+        for (unsigned z = 0; z < side; ++z) {
+          const octomap::OcTreeKey key(first[0] + x, first[1] + y, first[2] + z);
+          const auto center = octree_->keyToCoord(key);
+          PointType point{};
+          point.x = center.x();
+          point.y = center.y();
+          point.z = center.z();
+          output.push_back(point);
+        }
+      }
+    }
+  }
 }
 
 } // namespace mapping

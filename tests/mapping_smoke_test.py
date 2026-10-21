@@ -50,7 +50,6 @@ def main():
                 import rospy
                 from jsk_rviz_plugins.msg import OverlayText
                 from nav_msgs.msg import Odometry, Path as RosPath
-                from octomap_msgs.msg import Octomap
                 from sensor_msgs.msg import PointCloud2, PointField
                 from sensor_msgs import point_cloud2
                 from std_msgs.msg import Header
@@ -104,7 +103,7 @@ mapper:
                         ("radar", "/radar_aft_mapped", PointCloud2),
                         ("odom", "/odom", Odometry),
                         ("path", "/path", RosPath),
-                        ("map", "/octomap_binary", Octomap),
+                        ("map", "/map_cloud", PointCloud2),
                         ("stats", "/mapper_update_stats", OverlayText),
                     ]]
                 lidar = rospy.Publisher("/smoke/lidar", PointCloud2, queue_size=10)
@@ -169,11 +168,13 @@ mapper:
                           "Wrong mapped point count")
                     check(all(abs(a - b) < 1e-4 for point in points
                               for a, b in zip(point, expected)), "Wrong world coordinates")
-                octomap = received["map"][-1]
-                check(octomap.binary and octomap.id == "OcTree" and len(octomap.data) > 0,
-                      "Mapper did not produce a binary occupancy map")
-                check(octomap.header.frame_id == "world" and octomap.resolution == 0.5,
-                      "Wrong map frame or resolution")
+                map_cloud = received["map"][-1]
+                check(map_cloud.header.frame_id == "world", "Wrong map frame")
+                centers = list(point_cloud2.read_points(map_cloud, ("x", "y", "z")))
+                check(len(centers) == 1 and
+                      all(abs(a - b) < 1e-4 for a, b in
+                          zip(centers[0], (10.25, 10.25, 2.25))),
+                      "Wrong occupied voxel center in published map")
                 check(len(received["path"][-1].poses) == 2, "Wrong trajectory length")
                 check(received["odom"][-1].pose.pose.position.x == 10,
                       "Wrong GT odometry")
@@ -182,7 +183,7 @@ mapper:
                           "Missing mapper statistics")
                 check("LiDAR 3 | Radar 1" in received["stats"][-1].text,
                       "Wrong mapper input statistics")
-                late = rospy.wait_for_message("/octomap_binary", Octomap, timeout=2)
+                late = rospy.wait_for_message("/map_cloud", PointCloud2, timeout=2)
                 check(abs(late.header.stamp.to_sec() - 1.3) < 1e-6,
                       "Map publisher did not latch latest map")
                 node.send_signal(signal.SIGINT)

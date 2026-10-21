@@ -92,6 +92,6 @@ if(CATKIN_ENABLE_TESTING)
     ${PCL_INCLUDE_DIRS}
     ${OCTOMAP_INCLUDE_DIRS}
   )
-  target_link_libraries(mapper_test ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES})
+  target_link_libraries(mapper_test ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${PCL_LIBRARIES})
   add_test(NAME mapper_test COMMAND mapper_test)
 endif()

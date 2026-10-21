@@ -14,7 +14,6 @@
 
 #include "comm.h"
 
-#include <octomap/OcTree.h>
 #include <yaml-cpp/yaml.h>
 
 namespace mapping {
@@ -45,12 +44,14 @@ class Mapper {
 public:
   // No internal worker or locking. All methods run on the mapping thread,
   // or on the owner thread before startup / after the mapping thread is joined.
-  // GetOctree() returns a borrowed pointer; do not access it concurrently with Update().
   virtual ~Mapper() = default;
   virtual void Update(const MapperInput &input) = 0;
   virtual void Reset() = 0;
+  // Save occupied voxel centers as a binary PCD file; false on write failure.
   virtual bool Save(const std::string &path) const = 0;
-  virtual const octomap::OcTree *GetOctree() const = 0;
+  // Replace output with occupied voxel centers in the world frame at the
+  // configured base resolution, including voxels represented by merged leaves.
+  virtual void GetOccupiedCloud(PointCloudType &output) const = 0;
 };
 
 } // namespace mapping

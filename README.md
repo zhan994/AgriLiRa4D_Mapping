@@ -43,3 +43,17 @@ roslaunch mapping mapping.launch
 
 
 
+
+## Map output
+
+The latched `/map_cloud` topic publishes occupied voxel centers as
+`sensor_msgs/PointCloud2` in the `world` frame. Publication follows
+`mapper.publish_period`. Merged OctoMap leaves are enumerated at
+`mapper.octomap.resolution`, so every point represents one base-resolution voxel.
+RViz's Map Cloud display uses 0.5 m boxes by default; adjust its Size (m) when
+changing the configured resolution.
+
+`Mapper::GetOccupiedCloud()` replaces its output with this occupied cloud.
+`Mapper::Save(path)` writes the same points as a binary PCD file; use a `.pcd`
+extension. This export stores occupied geometry, without free-space or probability
+state.
