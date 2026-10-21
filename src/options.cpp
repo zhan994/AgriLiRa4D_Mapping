@@ -59,15 +59,17 @@ Options LoadOptionsFromFile(const std::string &config_file) {
   if (const auto publish_period = mapper["publish_period"]) {
     options.map_publish_period = publish_period.as<double>();
   }
-  if (options.mapper_type == 0) {
-    const auto octomap = mapper["octomap"];
-    options.octomap_options.resolution = octomap["resolution"].as<double>();
-    options.octomap_options.max_range = octomap["max_range"].as<double>();
-    options.octomap_options.hit_prob = octomap["hit_prob"].as<double>();
-    options.octomap_options.miss_prob = octomap["miss_prob"].as<double>();
-    options.octomap_options.occupancy_threshold =
-        octomap["occupancy_threshold"].as<double>();
+  if (const auto timing_csv = mapper["timing_csv"]) {
+    options.mapper_timing_csv = timing_csv.as<std::string>();
   }
+  if (options.mapper_type != 0 && options.mapper_type != 1)
+    throw std::invalid_argument("Unsupported mapper type");
+  options.mapper_options.resolution = mapper["resolution"].as<double>();
+  options.mapper_options.max_range = mapper["max_range"].as<double>();
+  options.mapper_options.hit_prob = mapper["hit_prob"].as<double>();
+  options.mapper_options.miss_prob = mapper["miss_prob"].as<double>();
+  options.mapper_options.occupancy_threshold =
+      mapper["occupancy_threshold"].as<double>();
 
   return options;
 }

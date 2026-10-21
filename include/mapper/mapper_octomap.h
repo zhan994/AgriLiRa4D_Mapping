@@ -9,8 +9,8 @@
  *
  */
 
-#ifndef OCTOMAP_MAPPER_H
-#define OCTOMAP_MAPPER_H
+#ifndef MAPPER_OCTOMAP_H
+#define MAPPER_OCTOMAP_H
 
 #include <octomap/octomap.h>
 
@@ -23,28 +23,18 @@ class OctoMapper : public Mapper {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  struct Options {
-    Options() {}
-    double resolution = 0.5; // default resolution in meters
-    double max_range = 50.0;
-    double hit_prob = 0.7;
-    double miss_prob = 0.4;
-    double occupancy_threshold = 0.5;
-  };
-
   explicit OctoMapper(const Options &options = Options());
 
   void Update(const MapperInput &input) override;
   void Reset() override;
   bool Save(const std::string &path) const override;
 
-  const octomap::OcTree *GetOctree() const override { return octree_.get(); }
+  void GetOccupiedCloud(PointCloudType &output) const override;
 
 private:
-  Options options_;
   std::shared_ptr<octomap::OcTree> octree_;
   octomap::KeyRay key_ray_; // temp storage for ray casting
 };
 
 } // namespace mapping
-#endif // OCTOMAP_MAPPER_H
+#endif // MAPPER_OCTOMAP_H

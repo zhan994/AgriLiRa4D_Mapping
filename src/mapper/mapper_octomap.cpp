@@ -1,18 +1,10 @@
 #include "mapper/mapper_octomap.h"
 
-#include <stdexcept>
+#include <pcl/io/pcd_io.h>
 
 namespace mapping {
 
-OctoMapper::OctoMapper(const Options &options) : options_(options) {
-  if (!std::isfinite(options_.resolution) || options_.resolution <= 0.0 ||
-      !std::isfinite(options_.max_range) || options_.max_range <= 0.0 ||
-      !std::isfinite(options_.hit_prob) || options_.hit_prob < 0.5 ||
-      options_.hit_prob >= 1.0 || !std::isfinite(options_.miss_prob) ||
-      options_.miss_prob <= 0.0 || options_.miss_prob > 0.5 ||
-      !std::isfinite(options_.occupancy_threshold) ||
-      options_.occupancy_threshold <= 0.0 || options_.occupancy_threshold >= 1.0)
-    throw std::invalid_argument("Invalid OctoMap resolution, range or probabilities");
+OctoMapper::OctoMapper(const Options &options) : Mapper(options) {
   octree_ = std::make_shared<octomap::OcTree>(options_.resolution);
   octree_->setProbHit(options_.hit_prob);
   octree_->setProbMiss(options_.miss_prob);
@@ -58,8 +50,8 @@ void OctoMapper::Update(const MapperInput &input) {
       free_cells.insert(key_ray_.begin(), key_ray_.end());
     }
 
-    // 最大测距范围内更新hit
-    if (len <= options_.max_range) {
+    // 严格小于最大测距范围时更新hit
+    if (len < options_.max_range) {
       // hit
       octomap::OcTreeKey tgt_key;
       if (octree_->coordToKeyChecked(tgt_pt, tgt_key)) {
@@ -91,7 +83,46 @@ bool OctoMapper::Save(const std::string &path) const {
     ROS_ERROR("OctoMapper: octree is not initialized.");
     return false;
   }
-  return octree_->writeBinary(path);
+  PointCloudType cloud;
+  GetOccupiedCloud(cloud);
+  try {
+    return pcl::io::savePCDFileBinary(path, cloud) == 0;
+  } catch (const pcl::IOException &error) {
+    ROS_ERROR("OctoMapper: Failed to save occupied cloud: %s", error.what());
+    return false;
+  }
+}
+
+void OctoMapper::GetOccupiedCloud(PointCloudType &output) const {
+  output.clear();
+  output.header.frame_id = "world";
+  output.is_dense = true;
+  if (!octree_)
+    return;
+
+  for (auto it = octree_->begin_leafs(), end = octree_->end_leafs();
+       it != end; ++it) {
+    if (!octree_->isNodeOccupied(*it))
+      continue;
+
+    // updateNode() can prune identical children. Enumerate their base-resolution
+    // keys without expanding or otherwise modifying the stored tree.
+    const auto first = it.getIndexKey();
+    const unsigned side = 1u << (octree_->getTreeDepth() - it.getDepth());
+    for (unsigned x = 0; x < side; ++x) {
+      for (unsigned y = 0; y < side; ++y) {
+        for (unsigned z = 0; z < side; ++z) {
+          const octomap::OcTreeKey key(first[0] + x, first[1] + y, first[2] + z);
+          const auto center = octree_->keyToCoord(key);
+          PointType point{};
+          point.x = center.x();
+          point.y = center.y();
+          point.z = center.z();
+          output.push_back(point);
+        }
+      }
+    }
+  }
 }
 
 } // namespace mapping

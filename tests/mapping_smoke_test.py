@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Run a mapping_node binary against synthetic sensors on a private ROS master.
 
-Usage: python3 tests/mapping_smoke_test.py /path/to/mapping_node
+Usage: python3 tests/mapping_smoke_test.py /path/to/mapping_node [0|1] [publish_period]
 Requires the ROS Noetic Python environment; no dataset or existing master needed.
 """
 
+import csv
 import math
 import os
 from pathlib import Path
@@ -21,6 +22,8 @@ import xmlrpc.client
 def main():
     with tempfile.TemporaryDirectory(prefix="agrilira-mapping-") as directory:
         root = Path(directory)
+        publish_period = float(sys.argv[3]) if len(sys.argv) > 3 else 0.15
+        csv_path = root / "timing" / "mapper.csv"
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
@@ -50,7 +53,6 @@ def main():
                 import rospy
                 from jsk_rviz_plugins.msg import OverlayText
                 from nav_msgs.msg import Odometry, Path as RosPath
-                from octomap_msgs.msg import Octomap
                 from sensor_msgs.msg import PointCloud2, PointField
                 from sensor_msgs import point_cloud2
                 from std_msgs.msg import Header
@@ -77,14 +79,14 @@ sync:
   pose_num_threshold: 2
   output_queue_capacity: 8
 mapper:
-  type: 0
-  publish_period: 0.15
-  octomap:
-    resolution: 0.5
-    max_range: 50
-    hit_prob: 0.7
-    miss_prob: 0.4
-    occupancy_threshold: 0.5
+  type: {int(sys.argv[2]) if len(sys.argv) > 2 else 0}
+  publish_period: {publish_period}
+  timing_csv: "{csv_path}"
+  resolution: 0.5
+  max_range: 50
+  hit_prob: 0.7
+  miss_prob: 0.4
+  occupancy_threshold: 0.5
 """)
                 rospy.init_node("mapping_smoke_test", anonymous=True,
                                 disable_signals=True)
@@ -104,7 +106,7 @@ mapper:
                         ("radar", "/radar_aft_mapped", PointCloud2),
                         ("odom", "/odom", Odometry),
                         ("path", "/path", RosPath),
-                        ("map", "/octomap_binary", Octomap),
+                        ("map", "/map_cloud", PointCloud2),
                         ("stats", "/mapper_update_stats", OverlayText),
                     ]]
                 lidar = rospy.Publisher("/smoke/lidar", PointCloud2, queue_size=10)
@@ -136,7 +138,17 @@ mapper:
                     return rospy.Time(nanoseconds // 1_000_000_000,
                                       nanoseconds % 1_000_000_000)
 
+                last_map_stamp = None
+                expected_get = []
                 for stamp in (1.0, 1.2):
+                    extract_map = (last_map_stamp is None or publish_period <= 0 or
+                                   stamp + 0.1 - last_map_stamp >= publish_period)
+                    expected_get.append(extract_map)
+                    if extract_map:
+                        last_map_stamp = stamp + 0.1
+                    outputs = ("lidar", "radar", "odom", "path")
+                    if extract_map:
+                        outputs += ("map",)
                     lidar.publish(point_cloud2.create_cloud(
                         Header(stamp=ros_time(stamp)), lidar_fields,
                         [(4, 0, 0, 5, 0, stamp + dt) for dt in (0, 0.05, 0.1)]))
@@ -148,7 +160,7 @@ mapper:
                             lambda: all(received.get(name) and
                                 abs(received[name][-1].header.stamp.to_sec() -
                                     (stamp + 0.1)) < 1e-6
-                                for name in ("lidar", "radar", "odom", "path", "map")),
+                                for name in outputs),
                             timeout=10)
                     if not ready:
                         stamps = {name: [message.header.stamp.to_sec()
@@ -169,11 +181,13 @@ mapper:
                           "Wrong mapped point count")
                     check(all(abs(a - b) < 1e-4 for point in points
                               for a, b in zip(point, expected)), "Wrong world coordinates")
-                octomap = received["map"][-1]
-                check(octomap.binary and octomap.id == "OcTree" and len(octomap.data) > 0,
-                      "Mapper did not produce a binary occupancy map")
-                check(octomap.header.frame_id == "world" and octomap.resolution == 0.5,
-                      "Wrong map frame or resolution")
+                map_cloud = received["map"][-1]
+                check(map_cloud.header.frame_id == "world", "Wrong map frame")
+                centers = list(point_cloud2.read_points(map_cloud, ("x", "y", "z")))
+                check(len(centers) == 1 and
+                      all(abs(a - b) < 1e-4 for a, b in
+                          zip(centers[0], (10.25, 10.25, 2.25))),
+                      "Wrong occupied voxel center in published map")
                 check(len(received["path"][-1].poses) == 2, "Wrong trajectory length")
                 check(received["odom"][-1].pose.pose.position.x == 10,
                       "Wrong GT odometry")
@@ -182,11 +196,28 @@ mapper:
                           "Missing mapper statistics")
                 check("LiDAR 3 | Radar 1" in received["stats"][-1].text,
                       "Wrong mapper input statistics")
-                late = rospy.wait_for_message("/octomap_binary", Octomap, timeout=2)
-                check(abs(late.header.stamp.to_sec() - 1.3) < 1e-6,
+                late = rospy.wait_for_message("/map_cloud", PointCloud2, timeout=2)
+                check(abs(late.header.stamp.to_sec() - last_map_stamp) < 1e-6,
                       "Map publisher did not latch latest map")
                 node.send_signal(signal.SIGINT)
                 check(node.wait(timeout=5) == 0, "Mapping failed to shut down cleanly")
+                with csv_path.open(newline="") as stream:
+                    reader = csv.DictReader(stream)
+                    check(reader.fieldnames == ["timestamp", "data_size", "update_cost",
+                                                "get_map_cost"], "Wrong timing CSV schema")
+                    rows = list(reader)
+                check(len(rows) == 2, "Timing CSV must contain every update")
+                for row, stamp, extracted in zip(rows, (1.1, 1.3), expected_get):
+                    check(abs(float(row["timestamp"]) - stamp) < 1e-9,
+                          "Wrong timing CSV timestamp")
+                    check(int(row["data_size"]) == 3, "CSV must count input LiDAR points")
+                    check(math.isfinite(float(row["update_cost"])) and
+                          float(row["update_cost"]) >= 0, "Invalid update timing")
+                    if extracted:
+                        check(math.isfinite(float(row["get_map_cost"])) and
+                              float(row["get_map_cost"]) >= 0, "Missing extraction timing")
+                    else:
+                        check(row["get_map_cost"] == "", "Skipped extraction must be blank")
                 print("Mapping ROS smoke test passed: callbacks -> sync -> mapper -> outputs")
             except Exception:
                 log.flush()

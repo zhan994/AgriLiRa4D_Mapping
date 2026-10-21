@@ -65,8 +65,11 @@ private:
   MapperInput Process(MeasureGroup &group);
   void UpdateMap(const MapperInput &input);
   void PublishResults(const MeasureGroup &group);
-  void PublishOctomap(const ros::Time &stamp);
+  // Returns extraction wall time in milliseconds, or NaN when publication is skipped.
+  double PublishMapCloud(const ros::Time &stamp);
   void PublishUpdateStats(const MapperUpdateStats &stats);
+  void WriteMapperTiming(double timestamp, std::size_t data_size,
+                         double update_cost_ms, double get_map_cost_ms);
 
   ros::NodeHandle nh_;
   Options options_;
@@ -76,13 +79,14 @@ private:
   std::unique_ptr<Synchronizer> synchronizer_;
 
   // Initialized before Run; used exclusively by Run until it has been joined.
-  // Includes Update, Reset, Save and GetOctree/serialization: no map mutex needed.
+  // Includes Update, Reset, Save and GetOccupiedCloud: no map mutex needed.
   std::unique_ptr<Mapper> mapper_;
   nav_msgs::Path path_;
   ros::Time last_map_publish_stamp_;
-  bool has_published_octomap_ = false;
+  bool has_published_map_ = false;
   double last_process_cpu_time_ms_ = 0.0;
   double last_process_wall_time_ms_ = 0.0;
+  std::ofstream mapper_timing_csv_; // Written by Run(); closed after joining it.
 
   // cloud_aft_mapped
   CloudPtr lidar_aft_mapped_;
@@ -97,7 +101,7 @@ private:
   ros::Publisher pub_path_;
   ros::Publisher pub_lidar_aft_mapped_;
   ros::Publisher pub_radar_aft_mapped_;
-  ros::Publisher pub_octomap_;
+  ros::Publisher pub_map_cloud_;
   ros::Publisher pub_update_stats_;
 
   std::thread run_thread_; // Stop() joins before any worker-owned state is destroyed.

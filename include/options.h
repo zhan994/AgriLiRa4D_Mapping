@@ -16,7 +16,7 @@
 
 #include <yaml-cpp/yaml.h>
 
-#include "mapper/mapper_octomap.h"
+#include "mapper/mapper.h"
 #include "sync.h"
 
 namespace mapping {
@@ -48,10 +48,11 @@ struct Options {
   double lidar_blind = 2.0;
   Synchronizer::Options sync_options = Synchronizer::Options();
 
-  int mapper_type = 0; // 0: OctoMapper
+  int mapper_type = 0; // 0: OctoMapper, 1: BonxaiMapper
   double map_publish_period = 1.0; // seconds; <= 0 publishes every update
+  std::string mapper_timing_csv; // Empty disables timing CSV output.
 
-  OctoMapper::Options octomap_options = OctoMapper::Options();
+  Mapper::Options mapper_options;
 };
 
 Options LoadOptionsFromFile(const std::string &config_file);
