@@ -23,18 +23,27 @@ class BonxaiMapper : public Mapper {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  struct Options {
-    Options() {}
-  };
-
   explicit BonxaiMapper(const Options &options = Options());
 
   void Update(const MapperInput &input) override;
   void Reset() override;
   bool Save(const std::string &path) const override;
 
+  void GetOccupiedCloud(PointCloudType &output) const override;
+
 private:
-  Options options_;
+  struct Cell {
+    enum : uint8_t { Unseen, Free, Hit };
+    float log_odds = 0.0f;
+    uint8_t flag = Unseen; // Transient; cleared after each Update().
+  };
+
+  Bonxai::VoxelGrid<Cell> grid_;
+  float hit_log_;
+  float miss_log_;
+  float occupancy_log_;
+  float clamp_min_log_;
+  float clamp_max_log_;
 };
 
 } // namespace mapping

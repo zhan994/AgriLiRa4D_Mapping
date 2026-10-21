@@ -65,8 +65,11 @@ private:
   MapperInput Process(MeasureGroup &group);
   void UpdateMap(const MapperInput &input);
   void PublishResults(const MeasureGroup &group);
-  void PublishMapCloud(const ros::Time &stamp);
+  // Returns extraction wall time in milliseconds, or NaN when publication is skipped.
+  double PublishMapCloud(const ros::Time &stamp);
   void PublishUpdateStats(const MapperUpdateStats &stats);
+  void WriteMapperTiming(double timestamp, std::size_t data_size,
+                         double update_cost_ms, double get_map_cost_ms);
 
   ros::NodeHandle nh_;
   Options options_;
@@ -83,6 +86,7 @@ private:
   bool has_published_map_ = false;
   double last_process_cpu_time_ms_ = 0.0;
   double last_process_wall_time_ms_ = 0.0;
+  std::ofstream mapper_timing_csv_; // Written by Run(); closed after joining it.
 
   // cloud_aft_mapped
   CloudPtr lidar_aft_mapped_;

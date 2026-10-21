@@ -1,19 +1,10 @@
 #include "mapper/mapper_octomap.h"
 
 #include <pcl/io/pcd_io.h>
-#include <stdexcept>
 
 namespace mapping {
 
-OctoMapper::OctoMapper(const Options &options) : options_(options) {
-  if (!std::isfinite(options_.resolution) || options_.resolution <= 0.0 ||
-      !std::isfinite(options_.max_range) || options_.max_range <= 0.0 ||
-      !std::isfinite(options_.hit_prob) || options_.hit_prob < 0.5 ||
-      options_.hit_prob >= 1.0 || !std::isfinite(options_.miss_prob) ||
-      options_.miss_prob <= 0.0 || options_.miss_prob > 0.5 ||
-      !std::isfinite(options_.occupancy_threshold) ||
-      options_.occupancy_threshold <= 0.0 || options_.occupancy_threshold >= 1.0)
-    throw std::invalid_argument("Invalid OctoMap resolution, range or probabilities");
+OctoMapper::OctoMapper(const Options &options) : Mapper(options) {
   octree_ = std::make_shared<octomap::OcTree>(options_.resolution);
   octree_->setProbHit(options_.hit_prob);
   octree_->setProbMiss(options_.miss_prob);

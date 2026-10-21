@@ -1,7 +1,11 @@
 #include "mapping.h"
+#include "mapper/mapper_bonxai.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <jsk_rviz_plugins/OverlayText.h>
+#include <limits>
+#include <locale>
 #include <stdexcept>
 
 namespace mapping {
@@ -37,10 +41,26 @@ Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
 
   // Initialize the mapper based on the specified type
   if (options_.mapper_type == 0) {
-    mapper_ = std::make_unique<OctoMapper>(options_.octomap_options);
+    mapper_ = std::make_unique<OctoMapper>(options_.mapper_options);
+  } else if (options_.mapper_type == 1) {
+    mapper_ = std::make_unique<BonxaiMapper>(options_.mapper_options);
   } else {
     ROS_ERROR("Unsupported mapper type: %d", options_.mapper_type);
     throw std::runtime_error("Unsupported mapper type");
+  }
+
+  if (!options_.mapper_timing_csv.empty()) {
+    const std::filesystem::path path(options_.mapper_timing_csv);
+    if (path.has_parent_path())
+      std::filesystem::create_directories(path.parent_path());
+    mapper_timing_csv_.imbue(std::locale::classic());
+    mapper_timing_csv_.open(path, std::ios::out | std::ios::trunc);
+    mapper_timing_csv_ << "timestamp,data_size,update_cost,get_map_cost\n";
+    mapper_timing_csv_.flush();
+    if (!mapper_timing_csv_)
+      throw std::runtime_error("Failed to open mapper timing CSV: " + path.string());
+    ROS_INFO("Mapper timing CSV (costs in ms): %s",
+             std::filesystem::absolute(path).c_str());
   }
 
   last_process_cpu_time_ms_ = GetProcessCpuTimeMs();
@@ -68,8 +88,10 @@ void Mapping::Stop() {
   if (synchronizer_)
     synchronizer_->Stop();
   
-    if (run_thread_.joinable())
+  if (run_thread_.joinable())
     run_thread_.join();
+  if (mapper_timing_csv_.is_open())
+    mapper_timing_csv_.close();
 }
 
 void Mapping::LoadPoseGT(const std::string &pose_gt_file) {
@@ -289,13 +311,13 @@ void Mapping::UpdateMap(const MapperInput &input) {
   stats.lidar_points = input.lidar_cloud ? input.lidar_cloud->size() : 0;
   stats.radar_points = input.radar_cloud ? input.radar_cloud->size() : 0;
 
-  const auto wall_before = std::chrono::steady_clock::now();
   const double cpu_before_ms = GetThreadCpuTimeMs();
+  const auto wall_before = std::chrono::steady_clock::now();
 
   mapper_->Update(input);
 
-  const double cpu_after_ms = GetThreadCpuTimeMs();
   const auto wall_after = std::chrono::steady_clock::now();
+  const double cpu_after_ms = GetThreadCpuTimeMs();
   const std::int64_t rss_after = GetProcessRssBytes();
 
   stats.wall_time_ms =
@@ -323,7 +345,27 @@ void Mapping::UpdateMap(const MapperInput &input) {
 
   PublishUpdateStats(stats);
 
-  PublishMapCloud(ros::Time(input.timestamp));
+  const double get_map_cost_ms = PublishMapCloud(ros::Time(input.timestamp));
+  WriteMapperTiming(input.timestamp, stats.lidar_points, stats.wall_time_ms,
+                    get_map_cost_ms);
+}
+
+void Mapping::WriteMapperTiming(double timestamp, std::size_t data_size,
+                                double update_cost_ms, double get_map_cost_ms) {
+  if (!mapper_timing_csv_.is_open())
+    return;
+  mapper_timing_csv_ << std::fixed << std::setprecision(9) << timestamp << ','
+                     << data_size << ',' << std::setprecision(6)
+                     << update_cost_ms << ',';
+  if (std::isfinite(get_map_cost_ms))
+    mapper_timing_csv_ << get_map_cost_ms;
+  mapper_timing_csv_ << '\n';
+  mapper_timing_csv_.flush();
+  if (!mapper_timing_csv_) {
+    ROS_ERROR("Failed to write mapper timing CSV: %s",
+              options_.mapper_timing_csv.c_str());
+    mapper_timing_csv_.close();
+  }
 }
 
 void Mapping::PublishUpdateStats(const MapperUpdateStats &stats) {
@@ -369,18 +411,21 @@ void Mapping::PublishUpdateStats(const MapperUpdateStats &stats) {
   pub_update_stats_.publish(message);
 }
 
-void Mapping::PublishMapCloud(const ros::Time &stamp) {
+double Mapping::PublishMapCloud(const ros::Time &stamp) {
   if (!mapper_)
-    return;
+    return std::numeric_limits<double>::quiet_NaN();
 
   if (options_.map_publish_period > 0.0 && has_published_map_ &&
       stamp >= last_map_publish_stamp_ &&
       (stamp - last_map_publish_stamp_).toSec() < options_.map_publish_period) {
-    return;
+    return std::numeric_limits<double>::quiet_NaN();
   }
 
   PointCloudType cloud;
+  const auto before = std::chrono::steady_clock::now();
   mapper_->GetOccupiedCloud(cloud);
+  const double get_map_cost_ms = std::chrono::duration<double, std::milli>(
+      std::chrono::steady_clock::now() - before).count();
   sensor_msgs::PointCloud2 message;
   pcl::toROSMsg(cloud, message);
 
@@ -389,5 +434,6 @@ void Mapping::PublishMapCloud(const ros::Time &stamp) {
   pub_map_cloud_.publish(message);
   last_map_publish_stamp_ = stamp;
   has_published_map_ = true;
+  return get_map_cost_ms;
 }
 } // namespace mapping

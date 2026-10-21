@@ -42,6 +42,17 @@ struct MapperInput {
 
 class Mapper {
 public:
+  struct Options {
+    Options() {}
+    double resolution = 0.5; // meters
+    double max_range = 50.0;
+    double hit_prob = 0.7;
+    double miss_prob = 0.4;
+    double occupancy_threshold = 0.5;
+  };
+
+  explicit Mapper(const Options &options = Options());
+
   // No internal worker or locking. All methods run on the mapping thread,
   // or on the owner thread before startup / after the mapping thread is joined.
   virtual ~Mapper() = default;
@@ -52,6 +63,9 @@ public:
   // Replace output with occupied voxel centers in the world frame at the
   // configured base resolution, including voxels represented by merged leaves.
   virtual void GetOccupiedCloud(PointCloudType &output) const = 0;
+
+protected:
+  const Options options_;
 };
 
 } // namespace mapping

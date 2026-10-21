@@ -52,11 +52,13 @@ set(MAPPING_SRC
   src/preprocess.cpp
   src/mapper/mapper.cpp
   src/mapper/mapper_octomap.cpp
+  src/mapper/mapper_bonxai.cpp
 )
 
 add_executable(mapping_node ${MAPPING_SRC})
 target_include_directories(mapping_node PUBLIC 
   ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty
   ${catkin_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
@@ -84,9 +86,10 @@ if(CATKIN_ENABLE_TESTING)
   set_tests_properties(synchronizer_test PROPERTIES TIMEOUT 20)
 
   add_executable(mapper_test tests/mapper_test.cpp
-    src/mapper/mapper.cpp src/mapper/mapper_octomap.cpp)
+    src/mapper/mapper.cpp src/mapper/mapper_octomap.cpp src/mapper/mapper_bonxai.cpp)
   target_include_directories(mapper_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty
     ${catkin_INCLUDE_DIRS}
     ${EIGEN3_INCLUDE_DIRS}
     ${PCL_INCLUDE_DIRS}
