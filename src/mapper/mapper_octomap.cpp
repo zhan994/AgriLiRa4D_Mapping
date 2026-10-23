@@ -12,6 +12,7 @@ OctoMapper::OctoMapper(const Options &options) : Mapper(options) {
 }
 
 void OctoMapper::Update(const MapperInput &input) {
+  diagnostics_ = {};
   if (!octree_) {
     ROS_ERROR("OctoMapper: octree is not initialized.");
     return;
@@ -28,8 +29,12 @@ void OctoMapper::Update(const MapperInput &input) {
     ROS_WARN("OctoMapper: Invalid LiDAR origin point.");
     return;
   }
+  octomap::OcTreeKey origin_key;
+  if (!octree_->coordToKeyChecked(lidar_origin, origin_key))
+    return;
 
   octomap::KeySet hit_cells, free_cells;
+  octomap::KeySet ray_endpoints;
   for (const auto &point : input.lidar_cloud->points) {
     if (!IsValidPoint(point.x, point.y, point.z))
       continue;
@@ -45,18 +50,25 @@ void OctoMapper::Update(const MapperInput &input) {
       tgt_pt = lidar_origin + dir_unit * options_.max_range;
     }
 
-    // 更新free
-    if (octree_->computeRayKeys(lidar_origin, tgt_pt, key_ray_)) {
-      free_cells.insert(key_ray_.begin(), key_ray_.end());
+    octomap::OcTreeKey tgt_key;
+    if (!octree_->coordToKeyChecked(tgt_pt, tgt_key))
+      continue;
+    ++diagnostics_.valid_points;
+    if (origin_key != tgt_key) {
+      ++diagnostics_.candidate_rays;
+      if (!options_.deduplicate_rays || ray_endpoints.insert(tgt_key).second) {
+        if (options_.deduplicate_rays)
+          tgt_pt = octree_->keyToCoord(tgt_key);
+        ++diagnostics_.ray_count;
+        if (octree_->computeRayKeys(lidar_origin, tgt_pt, key_ray_))
+          free_cells.insert(key_ray_.begin(), key_ray_.end());
+      }
     }
 
     // 严格小于最大测距范围时更新hit
     if (len < options_.max_range) {
       // hit
-      octomap::OcTreeKey tgt_key;
-      if (octree_->coordToKeyChecked(tgt_pt, tgt_key)) {
-        hit_cells.insert(tgt_key);
-      }
+      hit_cells.insert(tgt_key);
     }
   }
 
@@ -64,16 +76,19 @@ void OctoMapper::Update(const MapperInput &input) {
   for (auto it = free_cells.begin(), end = free_cells.end(); it != end; ++it) {
     if (hit_cells.find(*it) == hit_cells.end()) {
       octree_->updateNode(*it, false);
+      ++diagnostics_.touched_voxels;
     }
   }
 
   // now mark all occupied cells:
   for (auto it = hit_cells.begin(), end = hit_cells.end(); it != end; it++) {
     octree_->updateNode(*it, true);
+    ++diagnostics_.touched_voxels;
   }
 }
 
 void OctoMapper::Reset() {
+  diagnostics_ = {};
   if (octree_)
     octree_->clear();
 }

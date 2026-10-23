@@ -23,6 +23,9 @@ def read_timing(path):
         missing = set(COLUMNS) - set(reader.fieldnames or [])
         if missing:
             raise ValueError("Missing CSV columns: " + ", ".join(sorted(missing)))
+        diagnostics = [name for name in ("valid_points", "candidate_rays", "ray_count", "touched_voxels")
+                       if name in reader.fieldnames]
+        data.update({name: [] for name in diagnostics})
         for row in reader:
             try:
                 timestamp = float(row["timestamp"])
@@ -30,6 +33,12 @@ def read_timing(path):
                 update = float(row["update_cost"])
                 raw_get = row["get_map_cost"]
                 get = float(raw_get) if raw_get and raw_get.strip() else math.nan
+                counts = {name: int(row[name]) for name in diagnostics}
+                if any(value < 0 for value in counts.values()):
+                    raise ValueError("ray/voxel counts must be nonnegative")
+                if ("ray_count" in counts and "candidate_rays" in counts and
+                        counts["ray_count"] > counts["candidate_rays"]):
+                    raise ValueError("ray_count cannot exceed candidate_rays")
                 if not math.isfinite(timestamp):
                     raise ValueError("timestamp must be finite")
                 if size < 0 or not math.isfinite(update) or update < 0:
@@ -41,6 +50,8 @@ def read_timing(path):
             except (ValueError, TypeError) as error:
                 raise ValueError(f"CSV line {reader.line_num}: {error}") from error
             for name, value in zip(COLUMNS, (timestamp, size, update, get)):
+                data[name].append(value)
+            for name, value in counts.items():
                 data[name].append(value)
     if not data["timestamp"]:
         raise ValueError("CSV contains no timing samples")
@@ -55,7 +66,12 @@ def draw(datasets, names, output_dir, stem, image_format, dpi, show, time_axis):
 
     colors = ("#4278a8", "#db8534")
     styles = ("-", "--")
-    fig, axes = plt.subplots(3, 1, figsize=(11, 8), sharex=True,
+    columns = ["data_size", "update_cost", "get_map_cost"]
+    labels = ["Input LiDAR points", "Update cost (ms)", "Get map cost (ms)"]
+    if any("ray_count" in data for data in datasets):
+        columns.append("ray_count")
+        labels.append("Actual ray count")
+    fig, axes = plt.subplots(len(columns), 1, figsize=(11, 2.6 * len(columns)), sharex=True,
                              constrained_layout=True)
     for data, name, color, style in zip(datasets, names, colors, styles):
         origin = data["timestamp"][0] if time_axis == "elapsed" else 0
@@ -63,14 +79,21 @@ def draw(datasets, names, output_dir, stem, image_format, dpi, show, time_axis):
         get_count = sum(math.isfinite(value) for value in data["get_map_cost"])
         print(f"{name}: {len(times)} updates, {get_count} map extractions, "
               f"sensor duration={data['timestamp'][-1] - data['timestamp'][0]:.3f} s")
-        for ax, column in zip(axes, ("data_size", "update_cost", "get_map_cost")):
+        if "candidate_rays" in data and "ray_count" in data:
+            candidates, rays = sum(data["candidate_rays"]), sum(data["ray_count"])
+            reduction = 100 * (1 - rays / candidates) if candidates else 0
+            print(f"{name}: candidate rays={candidates}, actual rays={rays}, "
+                  f"ray reduction={reduction:.2f}%")
+        for ax, column in zip(axes, columns):
+            if column not in data:
+                ax.plot([], [], color=color, linestyle=style, label=f"{name} (not recorded)")
+                continue
             label = name
             if column == "get_map_cost" and not get_count:
                 label += " (no samples)"
             ax.plot(times, data[column], color=color, linestyle=style, linewidth=1,
                     marker=".", markersize=3, label=label)
-    for ax, label in zip(axes, ("Input LiDAR points", "Update cost (ms)",
-                                "Get map cost (ms)")):
+    for ax, label in zip(axes, labels):
         ax.set_ylabel(label)
         ax.grid(alpha=0.25)
         ax.set_ylim(bottom=0)
@@ -117,6 +140,17 @@ def draw(datasets, names, output_dir, stem, image_format, dpi, show, time_axis):
     box_path = output_dir / f"{stem}_boxplot.{image_format}"
     box_fig.savefig(box_path, dpi=dpi)
 
+    if len(datasets) == 2:
+        first, second = datasets
+        if (first["timestamp"] == second["timestamp"] and
+                first["data_size"] == second["data_size"]):
+            base, alternative = sum(first["update_cost"]), sum(second["update_cost"])
+            if base > 0 and alternative > 0:
+                print(f"Matching timestamps and point counts: {names[1]} vs {names[0]} "
+                      f"update speedup={base / alternative:.3f}x, "
+                      f"time reduction={100 * (1 - alternative / base):.2f}%")
+        else:
+            print("Timestamp/point-count sequences differ; no paired update speedup reported.")
     print(f"Saved {time_path}\nSaved {box_path}")
     if show:
         plt.show()

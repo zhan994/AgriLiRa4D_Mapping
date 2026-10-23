@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run a mapping_node binary against synthetic sensors on a private ROS master.
 
-Usage: python3 tests/mapping_smoke_test.py /path/to/mapping_node [0|1] [publish_period]
+Usage: python3 tests/mapping_smoke_test.py /path/to/mapping_node [0|1] [publish_period] [deduplicate_rays]
 Requires the ROS Noetic Python environment; no dataset or existing master needed.
 """
 
@@ -23,6 +23,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="agrilira-mapping-") as directory:
         root = Path(directory)
         publish_period = float(sys.argv[3]) if len(sys.argv) > 3 else 0.15
+        deduplicate_rays = len(sys.argv) > 4 and sys.argv[4].lower() == "true"
         csv_path = root / "timing" / "mapper.csv"
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
@@ -82,6 +83,7 @@ mapper:
   type: {int(sys.argv[2]) if len(sys.argv) > 2 else 0}
   publish_period: {publish_period}
   timing_csv: "{csv_path}"
+  deduplicate_rays: {str(deduplicate_rays).lower()}
   resolution: 0.5
   max_range: 50
   hit_prob: 0.7
@@ -204,7 +206,8 @@ mapper:
                 with csv_path.open(newline="") as stream:
                     reader = csv.DictReader(stream)
                     check(reader.fieldnames == ["timestamp", "data_size", "update_cost",
-                                                "get_map_cost"], "Wrong timing CSV schema")
+                                                "get_map_cost", "ray_mode", "valid_points",
+                                                "candidate_rays", "ray_count", "touched_voxels"], "Wrong timing CSV schema")
                     rows = list(reader)
                 check(len(rows) == 2, "Timing CSV must contain every update")
                 for row, stamp, extracted in zip(rows, (1.1, 1.3), expected_get):
@@ -213,6 +216,12 @@ mapper:
                     check(int(row["data_size"]) == 3, "CSV must count input LiDAR points")
                     check(math.isfinite(float(row["update_cost"])) and
                           float(row["update_cost"]) >= 0, "Invalid update timing")
+                    check(int(row["valid_points"]) == 3 and int(row["candidate_rays"]) == 3,
+                          "Wrong valid point or candidate ray count")
+                    check(int(row["ray_count"]) == (1 if deduplicate_rays else 3),
+                          "Wrong deduplicated ray count")
+                    check(row["ray_mode"] == ("endpoint_voxel" if deduplicate_rays else "per_point"),
+                          "Wrong ray strategy in CSV")
                     if extracted:
                         check(math.isfinite(float(row["get_map_cost"])) and
                               float(row["get_map_cost"]) >= 0, "Missing extraction timing")

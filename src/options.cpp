@@ -70,6 +70,8 @@ Options LoadOptionsFromFile(const std::string &config_file) {
   options.mapper_options.miss_prob = mapper["miss_prob"].as<double>();
   options.mapper_options.occupancy_threshold =
       mapper["occupancy_threshold"].as<double>();
+  if (const auto deduplicate_rays = mapper["deduplicate_rays"])
+    options.mapper_options.deduplicate_rays = deduplicate_rays.as<bool>();
 
   return options;
 }
