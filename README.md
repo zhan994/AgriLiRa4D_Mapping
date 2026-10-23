@@ -124,3 +124,52 @@ Single-CSV usage is also supported. Labels default to each CSV filename stem.
 Each run starts at elapsed time zero by default; use `--time-axis timestamp` to compare original sensor timestamps, for example if the runs cover different portions of the same recording. 
 Samples are not interpolated or paired, and each boxplot includes all available samples from its run. 
 Use the same dataset slice and `mapper.publish_period` for comparable workloads and extraction sampling.
+
+## Endpoint ray deduplication experiment
+
+`mapper.deduplicate_rays` defaults to `false` (the original per-point traversal).
+Set it to `true` to trace once per endpoint voxel, toward that voxel's center.
+Both OctoMap and Bonxai implement this switch. Valid original points still
+determine hit/miss classification, hit priority and range clipping; the clipped
+endpoint is not given an extra miss. This isolates ray deduplication from the
+other probability-model differences in the external `bonxai_map` example.
+
+The approximation changes free-space coverage. It preserves one hit per endpoint
+voxel, but the final occupancy map can differ after accumulated free updates.
+Ray reduction alone does not imply the same update-time reduction: endpoint
+hashing, probability updates and memory allocation still cost time.
+
+To measure on real data, run the **same backend**, dataset slice, resolution,
+filtering and publishing settings twice. Use separate `timing_csv` paths:
+
+1. `deduplicate_rays: false`, output `per_point.csv`.
+2. `deduplicate_rays: true`, output `endpoint.csv`.
+
+```bash
+python3 scripts/plot_mapper_timing.py per_point.csv endpoint.csv --labels PerPoint EndpointVoxel --output-dir plots
+```
+
+The first four CSV columns remain compatible with older files. Additional
+columns record `ray_mode`, `valid_points`, `candidate_rays`, `ray_count`, and
+`touched_voxels`. Candidate rays count valid endpoints outside the origin voxel;
+actual rays count traversal calls after deduplication. Hits within the origin
+voxel require no ray. Touched voxels count unique free/hit probability updates.
+The plotting script adds an actual-ray-count panel when these columns exist and
+prints ray reduction. For matching timestamp and input-count sequences, it also
+prints the update-time ratio and percentage reduction (second input vs first).
+Check these sequences before interpreting the results; equal counts alone do not
+prove identical point coordinates. Repeat runs to assess timing variability.
+
+A manual synthetic benchmark is built with `CATKIN_ENABLE_TESTING=ON`:
+
+```bash
+# After building and sourcing the catkin workspace:
+rosrun mapping mapper_ray_benchmark /tmp/ray_benchmark 20
+python3 scripts/plot_mapper_timing.py /tmp/ray_benchmark/per_point_x16.csv /tmp/ray_benchmark/endpoint_x16.csv --labels PerPoint EndpointVoxel
+```
+
+It repeats 800 voxel-centered endpoints 1, 4 and 16 times, warms both maps,
+alternates measurement order and writes two CSVs per case. Since these endpoints
+are voxel centers, the two modes follow identical geometry in this benchmark.
+This measures sensitivity to redundant returns; it is not a real-dataset speedup
+claim. Rolling is not enabled by this experiment.

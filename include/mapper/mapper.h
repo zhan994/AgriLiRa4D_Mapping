@@ -49,6 +49,15 @@ public:
     double hit_prob = 0.7;
     double miss_prob = 0.4;
     double occupancy_threshold = 0.5;
+    // Approximation: trace once per endpoint voxel, toward its center.
+    bool deduplicate_rays = false;
+  };
+
+  struct UpdateDiagnostics {
+    std::size_t valid_points = 0;
+    std::size_t candidate_rays = 0; // Valid endpoints outside the origin voxel.
+    std::size_t ray_count = 0;      // Actual traversal calls after deduplication.
+    std::size_t touched_voxels = 0; // Unique free/hit voxels updated this input.
   };
 
   explicit Mapper(const Options &options = Options());
@@ -63,9 +72,11 @@ public:
   // Replace output with occupied voxel centers in the world frame at the
   // configured base resolution, including voxels represented by merged leaves.
   virtual void GetOccupiedCloud(PointCloudType &output) const = 0;
+  const UpdateDiagnostics &GetUpdateDiagnostics() const { return diagnostics_; }
 
 protected:
   const Options options_;
+  UpdateDiagnostics diagnostics_;
 };
 
 } // namespace mapping

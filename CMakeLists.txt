@@ -97,4 +97,14 @@ if(CATKIN_ENABLE_TESTING)
   )
   target_link_libraries(mapper_test ${catkin_LIBRARIES} ${OCTOMAP_LIBRARIES} ${PCL_LIBRARIES})
   add_test(NAME mapper_test COMMAND mapper_test)
+  # Manual benchmark; timings are not pass/fail test assertions.
+  add_executable(mapper_ray_benchmark tests/mapper_ray_benchmark.cpp
+    src/mapper/mapper.cpp src/mapper/mapper_bonxai.cpp)
+  target_include_directories(mapper_ray_benchmark PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty
+    ${catkin_INCLUDE_DIRS}
+    ${EIGEN3_INCLUDE_DIRS}
+    ${PCL_INCLUDE_DIRS})
+  target_link_libraries(mapper_ray_benchmark ${catkin_LIBRARIES} ${PCL_LIBRARIES})
 endif()

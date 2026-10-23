@@ -55,7 +55,8 @@ Mapping::Mapping(ros::NodeHandle &nh, const Options &options)
       std::filesystem::create_directories(path.parent_path());
     mapper_timing_csv_.imbue(std::locale::classic());
     mapper_timing_csv_.open(path, std::ios::out | std::ios::trunc);
-    mapper_timing_csv_ << "timestamp,data_size,update_cost,get_map_cost\n";
+    mapper_timing_csv_ << "timestamp,data_size,update_cost,get_map_cost,ray_mode,"
+                         "valid_points,candidate_rays,ray_count,touched_voxels\n";
     mapper_timing_csv_.flush();
     if (!mapper_timing_csv_)
       throw std::runtime_error("Failed to open mapper timing CSV: " + path.string());
@@ -359,7 +360,13 @@ void Mapping::WriteMapperTiming(double timestamp, std::size_t data_size,
                      << update_cost_ms << ',';
   if (std::isfinite(get_map_cost_ms))
     mapper_timing_csv_ << get_map_cost_ms;
-  mapper_timing_csv_ << '\n';
+  const auto &diagnostics = mapper_->GetUpdateDiagnostics();
+  mapper_timing_csv_ << ',' << (options_.mapper_options.deduplicate_rays ?
+                                  "endpoint_voxel" : "per_point")
+                     << ',' << diagnostics.valid_points
+                     << ',' << diagnostics.candidate_rays
+                     << ',' << diagnostics.ray_count
+                     << ',' << diagnostics.touched_voxels << '\n';
   mapper_timing_csv_.flush();
   if (!mapper_timing_csv_) {
     ROS_ERROR("Failed to write mapper timing CSV: %s",

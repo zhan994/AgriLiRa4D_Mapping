@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <unordered_set>
 
 namespace mapping {
 namespace {
@@ -87,6 +88,7 @@ BonxaiMapper::BonxaiMapper(const Options &options)
       clamp_min_log_(LogOdds(0.1192)), clamp_max_log_(LogOdds(0.971)) {}
 
 void BonxaiMapper::Update(const MapperInput &input) {
+  diagnostics_ = {};
   if (!input.lidar_cloud || input.lidar_cloud->empty()) {
     ROS_WARN("MapperInput has no LiDAR data.");
     return;
@@ -100,6 +102,7 @@ void BonxaiMapper::Update(const MapperInput &input) {
 
   auto accessor = grid_.createAccessor();
   std::vector<Cell *> touched;
+  std::unordered_set<Bonxai::CoordT> ray_endpoints;
   auto mark = [&](const Bonxai::CoordT &coord, uint8_t flag) {
     Cell *cell = accessor.value(coord, true);
     if (cell->flag == Cell::Unseen)
@@ -120,14 +123,27 @@ void BonxaiMapper::Update(const MapperInput &input) {
     Bonxai::CoordT end_coord;
     if (!ToCoord(end, options_.resolution, end_coord))
       continue;
-    TraceRay(origin, end, origin_coord, end_coord, options_.resolution,
-             [&](const Bonxai::CoordT &coord) { mark(coord, Cell::Free); });
+    ++diagnostics_.valid_points;
+    if (origin_coord != end_coord) {
+      ++diagnostics_.candidate_rays;
+      if (!options_.deduplicate_rays || ray_endpoints.insert(end_coord).second) {
+        if (options_.deduplicate_rays) {
+          end = V3F((static_cast<double>(end_coord.x) + 0.5) * options_.resolution,
+                    (static_cast<double>(end_coord.y) + 0.5) * options_.resolution,
+                    (static_cast<double>(end_coord.z) + 0.5) * options_.resolution);
+        }
+        ++diagnostics_.ray_count;
+        TraceRay(origin, end, origin_coord, end_coord, options_.resolution,
+                 [&](const Bonxai::CoordT &coord) { mark(coord, Cell::Free); });
+      }
+    }
     if (length < options_.max_range)
       mark(end_coord, Cell::Hit);
   }
 
   // Leaf allocations keep their addresses across insertions. These pointers
   // avoid another grid lookup while applying one update per touched voxel.
+  diagnostics_.touched_voxels = touched.size();
   for (Cell *cell : touched) {
     cell->log_odds = std::clamp(
         cell->log_odds + (cell->flag == Cell::Hit ? hit_log_ : miss_log_),
@@ -136,7 +152,10 @@ void BonxaiMapper::Update(const MapperInput &input) {
   }
 }
 
-void BonxaiMapper::Reset() { grid_.clear(Bonxai::CLEAR_MEMORY); }
+void BonxaiMapper::Reset() {
+  grid_.clear(Bonxai::CLEAR_MEMORY);
+  diagnostics_ = {};
+}
 
 void BonxaiMapper::GetOccupiedCloud(PointCloudType &output) const {
   output.clear();
